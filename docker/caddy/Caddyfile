@@ -1,0 +1,19 @@
+{$CADDY_SITE_ADDRESS::80} {
+  encode zstd gzip
+
+  header {
+    -Server
+    X-Content-Type-Options "nosniff"
+    X-Frame-Options "DENY"
+    Referrer-Policy "strict-origin-when-cross-origin"
+  }
+
+  reverse_proxy app:3000 {
+    # Discovery responses are NDJSON streams and can run for several minutes.
+    flush_interval -1
+    transport http {
+      dial_timeout 10s
+      response_header_timeout 10m
+    }
+  }
+}

@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>CollabGlam Email Reveal</title>
+    <link rel="stylesheet" href="sidepanel.css" />
+  </head>
+  <body>
+    <header>
+      <div class="logo">CG</div>
+      <div>
+        <div class="title">CollabGlam Email Reveal</div>
+        <div class="muted" id="who">Not connected</div>
+      </div>
+    </header>
+
+    <!-- Connect -->
+    <section id="connect" class="card" hidden>
+      <h2>Connect to CollabGlam</h2>
+      <p class="muted">In CollabGlam open <b>Email reveal extension</b> in the sidebar, create a key, and paste it here.</p>
+      <label>CollabGlam address<input id="appUrl" placeholder="https://collabglam.example.com" /></label>
+      <label>Extension key<input id="token" placeholder="cgx_…" /></label>
+      <button id="connectBtn" class="primary">Connect</button>
+      <p id="connectError" class="error"></p>
+    </section>
+
+    <!-- Main -->
+    <section id="main" hidden>
+      <div class="card">
+        <label>Creators from
+          <select id="listSelect"></select>
+        </label>
+        <div class="row">
+          <label>Google accounts signed in
+            <input id="accountCount" type="number" min="1" max="10" />
+          </label>
+          <label>Reveals per account / day
+            <input id="dailyLimit" type="number" min="1" max="50" />
+          </label>
+        </div>
+        <div id="accounts" class="accounts"></div>
+        <p class="muted small">
+          Sign in to several Google accounts in this browser (avatar → <i>Add account</i>). Account 1 is the first one you signed in with.
+          When one reaches its daily limit, the next is used automatically.
+        </p>
+      </div>
+
+      <div class="card" id="work">
+        <div id="idle">
+          <p><b id="queueCount">0</b> creators need an email.</p>
+          <button id="startBtn" class="primary">Start revealing</button>
+        </div>
+        <div id="current" hidden>
+          <div class="creator">
+            <img id="curThumb" alt="" />
+            <div>
+              <div id="curTitle" class="strong"></div>
+              <div id="curMeta" class="muted small"></div>
+            </div>
+          </div>
+          <div id="stateBox" class="state"></div>
+          <div class="row buttons">
+            <button id="noEmailBtn">No email here</button>
+            <button id="skipBtn">Skip</button>
+            <button id="stopBtn">Stop</button>
+          </div>
+          <p class="muted small" id="progress"></p>
+        </div>
+      </div>
+
+      <div id="log" class="log"></div>
+      <button id="disconnectBtn" class="link">Disconnect</button>
+    </section>
+
+    <script src="sidepanel.js"></script>
+  </body>
+</html>

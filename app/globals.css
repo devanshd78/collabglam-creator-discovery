@@ -1,0 +1,272 @@
+@import "tailwindcss";
+
+@theme inline {
+  --font-sans: var(--font-inter);
+}
+
+:root {
+  --bg: #f6f8fb;
+  --surface: #ffffff;
+  --border: #ececf1;
+  --ink: #14171f;
+  --muted: #6d727e;
+  --muted-2: #9a9ea7;
+
+  --brand-teal: #157a8c;
+  --brand-teal-dark: #0e5c6b;
+  --brand-teal-light: #e3f2f5;
+  --brand-lime: #a9c62b;
+  --brand-lime-light: #eef5d3;
+  --brand-yellow: #d8c61a;
+
+  --success-bg: #e6f9ee;
+  --success-fg: #1a9d51;
+  --warn-bg: #fdf3d8;
+  --warn-fg: #9c7a08;
+  --danger-bg: #fde8e8;
+  --danger-fg: #c62828;
+  --neutral-bg: #eef0f3;
+  --neutral-fg: #565a63;
+  --info-bg: #e8f0fe;
+  --info-fg: #1c5cc5;
+
+  /* Text color for content sitting on an --ink-colored background (e.g. the active dashboard
+     tab pill) — always the inverse of --ink, in both themes. */
+  --ink-inverse: #ffffff;
+
+  --stage-first-bg: #c9f7ef;
+  --stage-first-fg: #0a5c50;
+  --stage-creatorlist-bg: #fff3b0;
+  --stage-creatorlist-fg: #7a5c00;
+  --stage-negotiation-bg: #3b5bdb;
+  --stage-negotiation-fg: #ffffff;
+  --stage-creatorselected-bg: #2f9e44;
+  --stage-creatorselected-fg: #ffffff;
+  --stage-notinterested-bg: #e03131;
+  --stage-notinterested-fg: #ffffff;
+  --stage-deal-bg: #862e2e;
+  --stage-deal-fg: #ffffff;
+
+  --radius-card: 14px;
+  --radius-pill: 999px;
+  --shadow-card: 0 1px 2px rgba(20, 23, 31, 0.04), 0 1px 12px rgba(20, 23, 31, 0.03);
+}
+
+/* Gmail-dark-mode-inspired palette. Applied when the user picks "Dark" (persisted in
+   localStorage and set as document.documentElement.dataset.theme by ThemeToggle/the inline
+   init script) or, absent an explicit choice, when the OS prefers dark. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #131314;
+    --surface: #1e1f20;
+    --border: #3c4043;
+    --ink: #e8eaed;
+    --ink-inverse: #131314;
+    --muted: #9aa0a6;
+    --muted-2: #80868b;
+
+    --brand-teal: #4fd8c4;
+    --brand-teal-dark: #7ee8d8;
+    --brand-teal-light: rgba(79, 216, 196, 0.16);
+    --brand-lime: #c3e88d;
+    --brand-lime-light: rgba(195, 232, 141, 0.14);
+    --brand-yellow: #f4d35e;
+
+    --success-bg: rgba(74, 222, 128, 0.16);
+    --success-fg: #6ee7a0;
+    --warn-bg: rgba(251, 191, 36, 0.18);
+    --warn-fg: #fbbf24;
+    --danger-bg: rgba(248, 113, 113, 0.16);
+    --danger-fg: #f87171;
+    --neutral-bg: #2a2b2d;
+    --neutral-fg: #b0b3b8;
+    --info-bg: rgba(138, 180, 248, 0.16);
+    --info-fg: #8ab4f8;
+
+    --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.5), 0 1px 12px rgba(0, 0, 0, 0.35);
+
+    --stage-first-bg: rgba(79, 216, 196, 0.18);
+    --stage-first-fg: #7ee8d8;
+    --stage-creatorlist-bg: rgba(244, 211, 94, 0.2);
+    --stage-creatorlist-fg: #f4d35e;
+    --stage-negotiation-bg: #3b5bdb;
+    --stage-negotiation-fg: #ffffff;
+    --stage-creatorselected-bg: #2f9e44;
+    --stage-creatorselected-fg: #ffffff;
+    --stage-notinterested-bg: #e03131;
+    --stage-notinterested-fg: #ffffff;
+    --stage-deal-bg: #a13d3d;
+    --stage-deal-fg: #ffffff;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #131314;
+  --surface: #1e1f20;
+  --border: #3c4043;
+  --ink: #e8eaed;
+  --muted: #9aa0a6;
+  --muted-2: #80868b;
+
+  --brand-teal: #4fd8c4;
+  --brand-teal-dark: #7ee8d8;
+  --brand-teal-light: rgba(79, 216, 196, 0.16);
+  --brand-lime: #c3e88d;
+  --brand-lime-light: rgba(195, 232, 141, 0.14);
+  --brand-yellow: #f4d35e;
+
+  --success-bg: rgba(74, 222, 128, 0.16);
+  --success-fg: #6ee7a0;
+  --warn-bg: rgba(251, 191, 36, 0.18);
+  --warn-fg: #fbbf24;
+  --danger-bg: rgba(248, 113, 113, 0.16);
+  --danger-fg: #f87171;
+  --neutral-bg: #2a2b2d;
+  --neutral-fg: #b0b3b8;
+  --info-bg: rgba(138, 180, 248, 0.16);
+  --info-fg: #8ab4f8;
+
+  --shadow-card: 0 1px 2px rgba(0, 0, 0, 0.5), 0 1px 12px rgba(0, 0, 0, 0.35);
+
+  --stage-first-bg: rgba(79, 216, 196, 0.18);
+  --stage-first-fg: #7ee8d8;
+  --stage-creatorlist-bg: rgba(244, 211, 94, 0.2);
+  --stage-creatorlist-fg: #f4d35e;
+  --stage-negotiation-bg: #3b5bdb;
+  --stage-negotiation-fg: #ffffff;
+  --stage-creatorselected-bg: #2f9e44;
+  --stage-creatorselected-fg: #ffffff;
+  --stage-notinterested-bg: #e03131;
+  --stage-notinterested-fg: #ffffff;
+  --stage-deal-bg: #a13d3d;
+  --stage-deal-fg: #ffffff;
+}
+
+body {
+  background: var(--bg);
+  color: var(--ink);
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-card);
+  box-shadow: var(--shadow-card);
+}
+
+.btn-primary {
+  background: var(--brand-teal);
+  color: #fff;
+  border-radius: var(--radius-pill);
+  font-weight: 600;
+  transition: background-color 0.15s ease;
+}
+.btn-primary:hover {
+  /* Not var(--brand-teal-dark) — that variable means "brighter, for text on a dark background"
+     in dark mode, which would lighten this button instead of darkening it on hover. A relative
+     brightness filter darkens correctly in both themes without needing a second color per mode. */
+  filter: brightness(0.88);
+}
+.btn-primary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-secondary {
+  background: var(--surface);
+  color: var(--ink);
+  border: 1px solid var(--border);
+  border-radius: var(--radius-pill);
+  font-weight: 500;
+  transition: background-color 0.15s ease;
+}
+.btn-secondary:hover {
+  background: var(--bg);
+}
+.btn-secondary:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.btn-danger {
+  background: var(--surface);
+  color: var(--danger-fg);
+  border: 1px solid #f3d4d4;
+  border-radius: var(--radius-pill);
+  font-weight: 500;
+}
+.btn-danger:hover {
+  background: var(--danger-bg);
+}
+.btn-danger:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+.badge {
+  display: inline-flex;
+  align-items: center;
+  border-radius: var(--radius-pill);
+  font-size: 12px;
+  font-weight: 600;
+  padding: 3px 10px;
+  white-space: nowrap;
+}
+
+.input {
+  background: var(--surface);
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  padding: 8px 12px;
+  font-size: 14px;
+  line-height: 1.4;
+  color: var(--ink);
+  width: 100%;
+  /* A consistent minimum height keeps single-line inputs, selects, and buttons aligned to the
+     same row height throughout the app — mismatched control heights next to each other is one of
+     the more common "the design feels inconsistent" tells, even when colors match. */
+  min-height: 38px;
+}
+.input:focus {
+  outline: none;
+  border-color: var(--brand-teal);
+  box-shadow: 0 0 0 3px var(--brand-teal-light);
+}
+.input::placeholder {
+  color: var(--muted-2);
+}
+.input:disabled {
+  opacity: 0.6;
+  cursor: not-allowed;
+}
+
+textarea.input {
+  min-height: 88px;
+  padding-top: 8px;
+  line-height: 1.5;
+  resize: vertical;
+}
+
+/* Native <select> renders the OS's own dropdown affordance by default — on a dark theme that's
+   an obviously out-of-place light-mode arrow. A custom chevron keeps it on-brand and consistent
+   with every other control, in both themes, without needing a JS-driven custom dropdown. */
+select.input {
+  appearance: none;
+  -webkit-appearance: none;
+  padding-right: 34px;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='16' height='16' viewBox='0 0 24 24' fill='none' stroke='%239a9ea7' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Cpolyline points='6 9 12 15 18 9'%3E%3C/polyline%3E%3C/svg%3E");
+  background-repeat: no-repeat;
+  background-position: right 10px center;
+  cursor: pointer;
+}
+
+/* Native checkboxes/radios (e.g. the "which thread is this" picker) otherwise render in the
+   browser's default accent (usually blue) — pinning this keeps every interactive control on the
+   same brand color instead of two different "selected" colors appearing side by side. */
+input[type="checkbox"],
+input[type="radio"] {
+  accent-color: var(--brand-teal);
+  width: 16px;
+  height: 16px;
+  cursor: pointer;
+  flex-shrink: 0;
+}

@@ -1,0 +1,61 @@
+{
+  "name": "collabglam-discovery",
+  "version": "0.1.0",
+  "private": true,
+  "scripts": {
+    "predev": "prisma generate",
+    "dev": "next dev",
+    "build": "prisma generate && next build",
+    "prestart": "prisma generate",
+    "start": "next start",
+    "lint": "eslint",
+    "typecheck": "tsc --noEmit",
+    "test": "vitest run",
+    "postinstall": "prisma generate",
+    "db:migrate": "prisma migrate deploy",
+    "db:studio": "prisma studio",
+    "db:check": "node scripts/check-db.mjs",
+    "db:generate": "prisma generate",
+    "env:check": "node scripts/validate-env.mjs",
+    "db:wait": "node scripts/wait-for-db.mjs",
+    "docker:up": "docker compose --env-file .env.docker up -d --build",
+    "docker:down": "docker compose --env-file .env.docker down",
+    "docker:logs": "docker compose --env-file .env.docker logs -f app caddy",
+    "db:backup": "./scripts/backup-postgres.sh",
+    "env:local:sync": "node scripts/sync-local-env.mjs",
+    "db:docker:up": "docker compose --env-file .env.docker -f docker-compose.yml -f docker-compose.dev-db.yml up -d db",
+    "db:docker:down": "docker compose --env-file .env.docker -f docker-compose.yml -f docker-compose.dev-db.yml down",
+    "dev:setup": "npm run env:local:sync && npm run db:docker:up && npm run db:wait && npm run db:migrate"
+  },
+  "dependencies": {
+    "@prisma/adapter-pg": "^6.19.3",
+    "@prisma/client": "^6.19.3",
+    "bcryptjs": "^3.0.3",
+    "dotenv": "^17.4.2",
+    "fflate": "^0.8.3",
+    "lucide-react": "^1.39.0",
+    "next": "16.3.4",
+    "pg": "^8.23.0",
+    "prisma": "^6.19.3",
+    "react": "19.2.8",
+    "react-dom": "19.2.8",
+    "server-only": "^0.0.1"
+  },
+  "devDependencies": {
+    "@tailwindcss/postcss": "^4",
+    "@types/bcryptjs": "^2.4.6",
+    "@types/node": "^20",
+    "@types/pg": "^8.23.1",
+    "@types/react": "^19",
+    "@types/react-dom": "^19",
+    "eslint": "^9",
+    "eslint-config-next": "16.3.4",
+    "tailwindcss": "^4",
+    "tsx": "^4.23.13",
+    "typescript": "^5",
+    "vitest": "^4.1.11"
+  },
+  "engines": {
+    "node": ">=20.9.0"
+  }
+}

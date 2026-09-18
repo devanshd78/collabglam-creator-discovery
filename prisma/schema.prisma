@@ -1,0 +1,222 @@
+generator client {
+  provider   = "prisma-client"
+  output     = "../app/generated/prisma"
+  // No native query-engine binary: queries run through the pg driver adapter (lib/prisma.ts).
+  engineType = "client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum Role {
+  ADMIN
+  MEMBER
+}
+
+enum BriefStatus {
+  ACTIVE
+  ARCHIVED
+}
+
+/// A team member. Accounts are created by an admin; there is no public sign-up.
+model User {
+  id           String    @id @default(cuid())
+  name         String
+  email        String    @unique
+  passwordHash String
+  role         Role      @default(MEMBER)
+  active       Boolean   @default(true)
+  lastLoginAt  DateTime?
+  createdAt    DateTime  @default(now())
+
+  briefs          BrandBrief[]
+  lists           CreatorList[]
+  creators        Creator[]
+  runs            SearchRun[]
+  extensionTokens ExtensionToken[]
+  reveals              EmailReveal[]
+  discoveryAssignments DiscoveryAssignment[]
+}
+
+/// The brand brief the admin posts each day; every member finds creators against it.
+model BrandBrief {
+  id               String      @id @default(cuid())
+  brandName        String
+  title            String
+  /// Plain-language brief — also what the Campaign tab parses into a discovery profile.
+  brief            String      @db.Text
+  /// Required creator/content niche used as a first-class discovery signal.
+  targetNiche      String      @db.Text
+  website          String?
+  market           String?
+  minSubscribers   Int?
+  maxSubscribers   Int?
+  /// How many creators the brand wants in total, across the whole team.
+  targetCreators   Int?
+  notes            String?     @db.Text
+  /// The day the brief is for (date only, stored at UTC midnight).
+  briefDate        DateTime    @db.Date
+  status           BriefStatus @default(ACTIVE)
+  createdById      String
+  createdAt        DateTime    @default(now())
+  updatedAt        DateTime    @updatedAt
+
+  createdBy User          @relation(fields: [createdById], references: [id])
+  lists     CreatorList[]
+  creators  Creator[]
+  runs                 SearchRun[]
+  discoveryAssignments DiscoveryAssignment[]
+
+  @@index([briefDate])
+}
+
+/// A member's saved list — the "CSV file" they build and download.
+model CreatorList {
+  id        String   @id @default(cuid())
+  name      String
+  ownerId   String
+  briefId   String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  owner    User        @relation(fields: [ownerId], references: [id])
+  brief    BrandBrief? @relation(fields: [briefId], references: [id], onDelete: SetNull)
+  creators Creator[]
+
+  @@index([ownerId])
+}
+
+/// A creator claimed by one team member. channelId is unique across the whole team, which is what
+/// guarantees a creator is handed to one person only — a second save of the same channel fails at
+/// the database, however close together the two requests arrive. Deleting the row releases it.
+model Creator {
+  id             String   @id @default(cuid())
+  channelId      String   @unique
+  title          String
+  channelUrl     String
+  thumbnailUrl   String?
+  country        String?
+  subscriberCount Int     @default(0)
+  averageViews   Int?
+  medianViews    Int?
+  engagementRate Float?
+  email          String?
+  emailSource    String?
+  emailSourceUrl String?
+  otherEmails    String[] @default([])
+  platformLinks  Json     @default("{}")
+  websiteLinks   String[] @default([])
+  mainContent    String?
+  matchScore     Int?
+  tier           String?
+  relevantVideos Int?
+  analyzedVideos Int?
+  lastUploadAt   DateTime?
+  whyFit         String[] @default([])
+  concerns       String[] @default([])
+  evidenceTitle  String?
+  evidenceUrl    String?
+  foundVia       String[] @default([])
+  /// "campaign" or "search" — which Discover tab it came from.
+  source         String
+  claimedById    String
+  listId         String
+  briefId        String?
+  runId          String?
+  claimedAt      DateTime @default(now())
+  /// Set when a member opened the About panel and the channel shows no business email at all —
+  /// takes the creator out of the reveal queue.
+  noPublicEmail  Boolean  @default(false)
+
+  claimedBy User        @relation(fields: [claimedById], references: [id])
+  list      CreatorList @relation(fields: [listId], references: [id], onDelete: Cascade)
+  brief     BrandBrief? @relation(fields: [briefId], references: [id], onDelete: SetNull)
+
+  @@index([claimedById, claimedAt])
+  @@index([listId])
+  @@index([briefId])
+}
+
+/// One Discover run. Results are kept so saving a creator copies the server's own findings rather
+/// than trusting numbers posted from the browser, and so the admin can see who searched what.
+model SearchRun {
+  id              String   @id @default(cuid())
+  userId          String
+  briefId         String?
+  kind            String
+  query           String   @db.Text
+  resultCount     Int      @default(0)
+  emailsFound     Int      @default(0)
+  hiddenAsClaimed Int      @default(0)
+  unitsUsed       Int      @default(0)
+  /// StoredCreator[] — see lib/creatorRecord.ts.
+  results         Json     @default("[]")
+  createdAt       DateTime @default(now())
+
+  user        User                  @relation(fields: [userId], references: [id])
+  brief       BrandBrief?           @relation(fields: [briefId], references: [id], onDelete: SetNull)
+  assignments DiscoveryAssignment[]
+
+  @@index([userId, createdAt])
+}
+
+/// A channel returned to one member by discovery. channelId is unique team-wide, so once a
+/// creator is shown to one member it is hidden from later searches by every other member.
+/// Removing a saved creator/list releases its assignment so the team can discover it again.
+model DiscoveryAssignment {
+  id        String   @id @default(cuid())
+  channelId String   @unique
+  userId    String
+  runId     String
+  briefId   String?
+  kind      String
+  createdAt DateTime @default(now())
+
+  user  User        @relation(fields: [userId], references: [id])
+  run   SearchRun   @relation(fields: [runId], references: [id], onDelete: Cascade)
+  brief BrandBrief? @relation(fields: [briefId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@index([briefId])
+  @@index([runId])
+}
+
+model YoutubeApiUsage {
+  date  String @id
+  units Int    @default(0)
+}
+
+/// A member's key for the Chrome extension. Only a SHA-256 hash is stored; the key itself is shown once.
+model ExtensionToken {
+  id         String    @id @default(cuid())
+  userId     String
+  tokenHash  String    @unique
+  label      String
+  lastUsedAt DateTime?
+  createdAt  DateTime  @default(now())
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+}
+
+/// One attempt to reveal a creator's email on YouTube's About panel, by a member, with one of their
+/// signed-in Google accounts. Used for per-account daily counts and for the admin's numbers.
+model EmailReveal {
+  id           String   @id @default(cuid())
+  userId       String
+  creatorId    String?
+  channelId    String
+  /// Which signed-in Google account (YouTube's `authuser` index) was used.
+  accountIndex Int
+  /// "revealed" | "none" (channel has no business email) | "limit" (YouTube's daily cap was hit)
+  outcome      String
+  email        String?
+  createdAt    DateTime @default(now())
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@index([userId, createdAt])
+}
