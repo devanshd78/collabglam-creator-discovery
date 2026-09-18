@@ -66,7 +66,7 @@ const CATEGORY_OPTIONS = [
   "podcast", "review", "unboxing", "tutorial",
 ];
 
-const SEARCH_UNIT_COST = 100;
+const SEARCH_UNIT_COST = 1;
 const MAX_PHRASES = 5;
 const MAX_SEARCH_PAGES_PER_PHRASE = 3;
 const MAX_CHANNELS_TO_INSPECT = 600;
@@ -210,7 +210,7 @@ export default function SearchTab({ brief, defaultListName }: { brief: BriefOpti
           <input type="checkbox" checked={expandKeywords} onChange={(e) => setExpandKeywords(e.target.checked)} />
           <Sparkles size={12} style={{ color: "var(--brand-teal-dark)" }} />
           Also search &ldquo;review&rdquo;, &ldquo;unboxing&rdquo; and &ldquo;best …&rdquo; variants
-          <span className="text-[var(--muted-2)]">(wider net, +100 units per added phrase)</span>
+          <span className="text-[var(--muted-2)]">(wider net, +1 Search Query call per added phrase)</span>
         </label>
 
         <div className="flex flex-wrap items-center gap-2">
@@ -356,7 +356,7 @@ export default function SearchTab({ brief, defaultListName }: { brief: BriefOpti
           ) : (
             <span />
           )}
-          <span className="text-[11px] text-[var(--muted-2)]">up to ~{estimatedUnits} API units if extra YouTube pages are needed</span>
+          <span className="text-[11px] text-[var(--muted-2)]">up to ~{estimatedUnits} estimated YouTube API calls if extra pages are needed</span>
         </div>
       </div>
 
@@ -377,7 +377,7 @@ export default function SearchTab({ brief, defaultListName }: { brief: BriefOpti
             {result.creators.length} shown{result.candidateCount > result.creators.length ? ` of ${result.candidateCount} matching the basic filters` : ""} ·{" "}
             {result.creators.filter((c) => c.email).length} with email
             {result.hiddenAsClaimed > 0 ? ` · ${result.hiddenAsClaimed} hidden because they were already assigned to the team` : ""} · searched{" "}
-            {result.searchedPhrases.map((p) => `“${p}”`).join(", ")} · {result.unitsUsed} API units
+            {result.searchedPhrases.map((p) => `“${p}”`).join(", ")} · {result.unitsUsed} estimated API calls
           </p>
           <ResultsTable key={result.runId} runId={result.runId} creators={result.creators} briefId={brief?.id ?? null} defaultListName={defaultListName} />
         </div>

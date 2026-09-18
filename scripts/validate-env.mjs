@@ -1,7 +1,9 @@
 import "dotenv/config";
 
 const errors = [];
+const warnings = [];
 const required = ["DATABASE_URL", "SESSION_SECRET", "YOUTUBE_API_KEY"];
+
 for (const name of required) {
   if (!process.env[name]?.trim()) errors.push(`${name} is required`);
 }
@@ -14,6 +16,22 @@ for (const name of ["DATABASE_URL", "DIRECT_URL", "SESSION_SECRET", "YOUTUBE_API
 
 const secret = process.env.SESSION_SECRET?.trim() || "";
 if (secret && secret.length < 32) errors.push("SESSION_SECRET must be at least 32 characters");
+
+const rawYoutubeKeys = String(process.env.YOUTUBE_API_KEY ?? "")
+  .split(",")
+  .map((key) => key.trim().replace(/^["']+|["']+$/g, ""))
+  .filter(Boolean);
+const youtubeKeys = [...new Set(rawYoutubeKeys)];
+
+if (rawYoutubeKeys.length !== youtubeKeys.length) {
+  warnings.push(`YOUTUBE_API_KEY contains ${rawYoutubeKeys.length - youtubeKeys.length} duplicate key(s)`);
+}
+if (youtubeKeys.some((key) => /\s/.test(key))) {
+  errors.push("YOUTUBE_API_KEY contains whitespace inside an API key");
+}
+if (youtubeKeys.length === 0) {
+  errors.push("YOUTUBE_API_KEY must contain at least one API key");
+}
 
 if (process.env.NODE_ENV === "production") {
   const base = process.env.APP_BASE_URL?.trim();
@@ -44,4 +62,7 @@ if (errors.length) {
   for (const error of errors) console.error(`- ${error}`);
   process.exit(1);
 }
+
+console.log(`YouTube API keys configured: ${youtubeKeys.length}`);
+for (const warning of warnings) console.warn(`Environment warning: ${warning}`);
 console.log("Environment validation passed.");

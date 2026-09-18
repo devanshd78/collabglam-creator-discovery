@@ -2,7 +2,7 @@ import Link from "next/link";
 import { ArrowRight, Megaphone } from "lucide-react";
 import { requirePageUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { dailyUnitBudget, getUnitsUsedToday, startOfTodayIst, todayKey } from "@/lib/usage";
+import { getUnitsUsedToday, startOfTodayIst, todayKey } from "@/lib/usage";
 import { briefDay } from "@/lib/format";
 import { StatCard, PageHeader } from "../components/ui";
 
@@ -33,7 +33,6 @@ export default async function Dashboard() {
   });
   const myCount = new Map(mineByBrief.map((r) => [r.briefId, r._count._all]));
   const todayIso = todayKey();
-  const budget = dailyUnitBudget();
 
   return (
     <div className="space-y-6">
@@ -44,9 +43,9 @@ export default async function Dashboard() {
         <StatCard label="Last 7 days" value={weekSaved} />
         <StatCard label="All time" value={totalSaved} hint={`${totalEmails} with email`} />
         <StatCard
-          label="Team API quota today"
-          value={`${Math.round((unitsToday / Math.max(budget, 1)) * 100)}%`}
-          hint={`${unitsToday.toLocaleString()} of ${budget.toLocaleString()} units`}
+          label="Tracked YouTube calls today"
+          value={unitsToday.toLocaleString()}
+          hint="Search Queries has a separate project-level daily quota"
         />
       </div>
 

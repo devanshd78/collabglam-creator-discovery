@@ -7,7 +7,7 @@
  * The creator is the final unit of analysis. Search is only how candidates get found; a creator
  * qualifies on what their own uploads show, not on the one video that happened to surface them.
  *
- * Quota shape (YouTube Data API): search.list is 100 units per call and dominates cost, so the
+ * Quota shape (YouTube Data API): search.list uses its own Search Queries bucket, so the
  * search phase is adaptive — it stops early once new query batches mostly re-find creators already
  * in the pool. Loading a creator's history is cheap by comparison (1 unit per 50 uploads, 1 per 50
  * video stat lookups), which is what makes inspecting 50–100 uploads per creator affordable.
@@ -30,7 +30,7 @@ export const DEPTH_SETTINGS: Record<DiscoveryDepth, { label: string; maxQueries:
 };
 
 export const ALREADY_CLAIMED = "Already assigned to someone on the team";
-const SEARCH_UNIT_COST = 100;
+const SEARCH_UNIT_COST = 1;
 const LOOKUP_UNIT_COST = 1;
 const SEARCH_BATCH_SIZE = 4;
 const MAX_POOL = 400;

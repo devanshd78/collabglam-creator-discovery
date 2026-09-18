@@ -25,8 +25,3 @@ export async function getUnitsUsedToday(): Promise<number> {
   return row?.units ?? 0;
 }
 
-/** 10,000 units per key per day is YouTube's default quota. */
-export function dailyUnitBudget(): number {
-  const keys = String(process.env.YOUTUBE_API_KEY ?? "").split(",").filter((k) => k.trim()).length;
-  return keys * 10_000;
-}

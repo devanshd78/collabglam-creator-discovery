@@ -2,7 +2,7 @@ import Link from "next/link";
 import { Download } from "lucide-react";
 import { requirePageUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { dailyUnitBudget, getUnitsUsedToday, startOfTodayIst, todayKey } from "@/lib/usage";
+import { getUnitsUsedToday, startOfTodayIst, todayKey } from "@/lib/usage";
 import { dateTime } from "@/lib/format";
 import { PageHeader, StatCard, Td, Th } from "../../components/ui";
 
@@ -102,8 +102,8 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
       <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
         <StatCard label="Creators saved" value={totalSaved} hint={period.label} />
         <StatCard label="With real email" value={totalEmail} hint={totalSaved ? `${Math.round((totalEmail / totalSaved) * 100)}% of saved` : undefined} />
-        <StatCard label="Searches run" value={totalRuns} hint={`${totalUnits.toLocaleString()} API units`} />
-        <StatCard label="API quota today" value={`${unitsToday.toLocaleString()} / ${dailyUnitBudget().toLocaleString()}`} hint="YouTube resets it at midnight Pacific time (early afternoon IST)" />
+        <StatCard label="Searches run" value={totalRuns} hint={`${totalUnits.toLocaleString()} estimated API calls`} />
+        <StatCard label="Tracked YouTube calls today" value={unitsToday.toLocaleString()} hint="Search Queries has a separate project-level daily quota" />
       </div>
 
       <div className="card overflow-x-auto">
@@ -116,7 +116,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
               <Th className="text-right">Email rate</Th>
               <Th className="text-right">Revealed on YouTube</Th>
               <Th className="text-right">Searches</Th>
-              <Th className="text-right">API units</Th>
+              <Th className="text-right">API calls</Th>
               <Th>Last saved</Th>
               <Th>Last sign-in</Th>
               <Th />
@@ -169,7 +169,7 @@ export default async function AdminPage({ searchParams }: { searchParams: Promis
                 <Th className="text-right">Results</Th>
                 <Th className="text-right">Emails</Th>
                 <Th className="text-right">Hidden (assigned)</Th>
-                <Th className="text-right">Units</Th>
+                <Th className="text-right">Calls</Th>
               </tr>
             </thead>
             <tbody>
