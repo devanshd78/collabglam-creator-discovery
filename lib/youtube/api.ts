@@ -37,8 +37,13 @@ function apiKeys(): string[] {
  * random offset spreads load across instances; within one instance the cursor advances to the
  * next key on quota errors.
  */
-let keyCursor = -1;
+let keyCursor = Math.floor(Math.random() * 1000000);
 
+function takeNextKeyIndex(length: number): number {
+  const index = keyCursor % length;
+  keyCursor = (keyCursor + 1) % length;
+  return index;
+}
 export class YouTubeApiError extends Error {
   readonly statusCode: number;
   readonly reason: string;
@@ -76,12 +81,12 @@ export async function youtubeGet<T = YouTubeListResponse>(
     );
   }
 
-  if (keyCursor < 0) keyCursor = Math.floor(Math.random() * keys.length);
+  const startIndex = takeNextKeyIndex(keys.length);
 
   let lastError: YouTubeApiError | null = null;
 
   for (let attempt = 0; attempt < keys.length; attempt += 1) {
-    const keyIndex = (keyCursor + attempt) % keys.length;
+    const keyIndex = (startIndex + attempt) % keys.length;
 
     const search = new URLSearchParams({ key: keys[keyIndex] });
     for (const [name, value] of Object.entries(params)) {
@@ -104,7 +109,6 @@ export async function youtubeGet<T = YouTubeListResponse>(
     }
 
     if (res.ok) {
-      keyCursor = keyIndex;
       return (await res.json()) as T;
     }
 
