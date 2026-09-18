@@ -35,8 +35,10 @@ export type PlatformKey = (typeof PLATFORM_KEYS)[number];
 /** search.list has no boolean query language, so each phrase is its own 100-unit call. */
 const MAX_QUERY_PHRASES = 5;
 const MAX_SEARCH_HITS_PER_PHRASE = 50;
+const MAX_SEARCH_PAGES_PER_PHRASE = 3;
 const CHANNELS_LOOKUP_CHUNK = 50;
-const MAX_CANDIDATE_CHANNELS = 150;
+/** Search deeper when filters/team claims thin the first YouTube page. */
+const MAX_CHANNELS_TO_INSPECT = 600;
 /** Enough recent uploads to read engagement, cadence and the creator's repeated footer. */
 const RECENT_SAMPLE_SIZE = 15;
 /** The smallest size band offered starts at 1K; an explicit minSubscribers overrides this. */
@@ -176,27 +178,6 @@ export async function runDiscoverySearch(
   const phrases = filters.expandKeywords ? expandKeywords(basePhrases, MAX_QUERY_PHRASES - basePhrases.length) : basePhrases;
   let unitsUsed = 0;
 
-  onEvent({ type: "stage", message: `Searching YouTube for ${phrases.length} phrase${phrases.length === 1 ? "" : "s"}…` });
-  const searchOpts: SearchChannelsOptions = {
-    maxResults: MAX_SEARCH_HITS_PER_PHRASE,
-    relevanceLanguage: filters.language,
-    regionCode: filters.country,
-    order: filters.sortOrder,
-  };
-  const searches = await Promise.all(phrases.map((phrase) => searchChannels(phrase, searchOpts)));
-  unitsUsed += SEARCH_UNIT_COST * phrases.length;
-
-  const hitIds = [...new Set(searches.flatMap((s) => s.items.map((h) => h.channelId)))];
-  const claimed = await findClaimed(hitIds);
-  const ids = hitIds.filter((id) => !claimed.has(id)).slice(0, MAX_CANDIDATE_CHANNELS);
-  if (ids.length === 0) return { results: [], candidateCount: 0, hiddenAsClaimed: claimed.size, searchedPhrases: phrases, unitsUsed };
-
-  onEvent({ type: "stage", message: `Loading ${ids.length} channels…` });
-  const chunks: string[][] = [];
-  for (let i = 0; i < ids.length; i += CHANNELS_LOOKUP_CHUNK) chunks.push(ids.slice(i, i + CHANNELS_LOOKUP_CHUNK));
-  const rawChannels = (await Promise.all(chunks.map((chunk) => getChannelsDetailsBatch(chunk)))).flat();
-  unitsUsed += LOOKUP_UNIT_COST * chunks.length;
-
   type Candidate = NormalizedChannel & {
     email: string | null;
     platformLinks: ExtractedPlatformLinks;
@@ -204,27 +185,10 @@ export async function runDiscoverySearch(
     countryConfidence: CountryConfidence;
     preliminaryRelevance: number;
   };
-  const minSubscribers = filters.minSubscribers ?? DEFAULT_MIN_SUBSCRIBERS;
-  const candidates: Candidate[] = rawChannels
-    .map(normalizeChannel)
-    .filter((c) => {
-      if (filters.country && c.country && c.country.toUpperCase() !== filters.country.toUpperCase()) return false;
-      if (c.subscriberCount < minSubscribers) return false;
-      if (filters.maxSubscribers && c.subscriberCount > filters.maxSubscribers) return false;
-      return matchesAnyTier(c.subscriberCount, filters.subscriberTiers);
-    })
-    .map((c) => ({
-      ...c,
-      ...extractChannelContact(c.description),
-      channelKind: detectChannelKind(c.title, c.description),
-      countryConfidence: countryMatchConfidence(c.country, filters.country),
-      preliminaryRelevance: computeRelevance({ channelText: `${c.title} ${c.description}`, videoTexts: [], phrases: basePhrases }).score,
-    }))
-    .filter((c) => matchesAnyPlatform(c.platformLinks, filters.platforms))
-    .filter((c) => (filters.excludeBrandChannels ? c.channelKind === "creator" : true));
 
-  // Filters only checkable after the per-channel lookup (and the email filter, only checkable after
-  // research) mean some survivors won't make the cut — so more of them get looked up.
+  // Filters that are only knowable after recent-video/email enrichment can remove otherwise valid
+  // channels. Search extra candidates up front so requesting 30 does not collapse to 6 simply
+  // because the first YouTube page was thin after filtering.
   const needsHeadroom = !!(
     filters.postedWithinDays ||
     filters.minAverageViews ||
@@ -235,7 +199,112 @@ export async function runDiscoverySearch(
     filters.hasEmail ||
     (filters.categories && filters.categories.length > 0)
   );
-  const survivorCap = Math.min(candidates.length, needsHeadroom ? Math.min(filters.maxResults * 2, 60) : filters.maxResults);
+  const candidateGoal = Math.min(
+    MAX_CHANNELS_TO_INSPECT,
+    filters.hasEmail
+      ? Math.max(filters.maxResults * 4, filters.maxResults + 50)
+      : needsHeadroom
+        ? Math.max(filters.maxResults * 3, filters.maxResults + 20)
+        : filters.maxResults
+  );
+
+  const searchOpts: Omit<SearchChannelsOptions, "pageToken"> = {
+    maxResults: MAX_SEARCH_HITS_PER_PHRASE,
+    relevanceLanguage: filters.language,
+    regionCode: filters.country,
+    order: filters.sortOrder,
+  };
+  const nextPageTokens: Array<string | undefined> = phrases.map(() => undefined);
+  const activePhrases = phrases.map(() => true);
+  const inspectedIds = new Set<string>();
+  const claimed = new Set<string>();
+  const candidatesById = new Map<string, Candidate>();
+  const minSubscribers = filters.minSubscribers ?? DEFAULT_MIN_SUBSCRIBERS;
+
+  onEvent({ type: "stage", message: `Searching YouTube for ${phrases.length} phrase${phrases.length === 1 ? "" : "s"}…` });
+
+  for (let page = 0; page < MAX_SEARCH_PAGES_PER_PHRASE; page += 1) {
+    if (candidatesById.size >= candidateGoal || inspectedIds.size >= MAX_CHANNELS_TO_INSPECT) break;
+
+    const calls = phrases.map(async (phrase, index) => {
+      if (!activePhrases[index]) return null;
+      const pageToken = page === 0 ? undefined : nextPageTokens[index];
+      if (page > 0 && !pageToken) {
+        activePhrases[index] = false;
+        return null;
+      }
+      const result = await searchChannels(phrase, { ...searchOpts, pageToken });
+      return { index, result };
+    });
+    const pageResults = (await Promise.all(calls)).filter(
+      (value): value is { index: number; result: Awaited<ReturnType<typeof searchChannels>> } => value !== null
+    );
+    if (pageResults.length === 0) break;
+    unitsUsed += SEARCH_UNIT_COST * pageResults.length;
+
+    const newIds: string[] = [];
+    for (const { index, result } of pageResults) {
+      nextPageTokens[index] = result.nextPageToken;
+      activePhrases[index] = !!result.nextPageToken;
+      for (const hit of result.items) {
+        if (inspectedIds.has(hit.channelId) || newIds.includes(hit.channelId)) continue;
+        if (inspectedIds.size + newIds.length >= MAX_CHANNELS_TO_INSPECT) break;
+        newIds.push(hit.channelId);
+      }
+    }
+
+    if (newIds.length === 0) {
+      if (!activePhrases.some(Boolean)) break;
+      continue;
+    }
+    for (const id of newIds) inspectedIds.add(id);
+
+    const claimedThisPage = await findClaimed(newIds);
+    for (const id of claimedThisPage) claimed.add(id);
+    const unclaimedIds = newIds.filter((id) => !claimedThisPage.has(id));
+
+    if (unclaimedIds.length > 0) {
+      onEvent({ type: "stage", message: `Checking ${unclaimedIds.length} new channels (${candidatesById.size}/${filters.maxResults} eligible so far)…` });
+      const chunks: string[][] = [];
+      for (let i = 0; i < unclaimedIds.length; i += CHANNELS_LOOKUP_CHUNK) chunks.push(unclaimedIds.slice(i, i + CHANNELS_LOOKUP_CHUNK));
+      const rawChannels = (await Promise.all(chunks.map((chunk) => getChannelsDetailsBatch(chunk)))).flat();
+      unitsUsed += LOOKUP_UNIT_COST * chunks.length;
+
+      for (const raw of rawChannels) {
+        const c = normalizeChannel(raw);
+        if (filters.country && c.country && c.country.toUpperCase() !== filters.country.toUpperCase()) continue;
+        if (c.subscriberCount < minSubscribers) continue;
+        if (filters.maxSubscribers && c.subscriberCount > filters.maxSubscribers) continue;
+        if (!matchesAnyTier(c.subscriberCount, filters.subscriberTiers)) continue;
+
+        const contact = extractChannelContact(c.description);
+        const candidate: Candidate = {
+          ...c,
+          ...contact,
+          channelKind: detectChannelKind(c.title, c.description),
+          countryConfidence: countryMatchConfidence(c.country, filters.country),
+          preliminaryRelevance: computeRelevance({ channelText: `${c.title} ${c.description}`, videoTexts: [], phrases: basePhrases }).score,
+        };
+        if (!matchesAnyPlatform(candidate.platformLinks, filters.platforms)) continue;
+        if (filters.excludeBrandChannels && candidate.channelKind !== "creator") continue;
+        candidatesById.set(candidate.channelId, candidate);
+      }
+    }
+
+    if (candidatesById.size < candidateGoal && activePhrases.some(Boolean) && page + 1 < MAX_SEARCH_PAGES_PER_PHRASE) {
+      onEvent({
+        type: "stage",
+        message: `Found ${candidatesById.size} eligible creator${candidatesById.size === 1 ? "" : "s"}; searching deeper to reach ${filters.maxResults}…`,
+      });
+    }
+  }
+
+  const candidates = [...candidatesById.values()];
+  if (candidates.length === 0) {
+    return { results: [], candidateCount: 0, hiddenAsClaimed: claimed.size, searchedPhrases: phrases, unitsUsed };
+  }
+
+  const survivorCap = Math.min(candidates.length, candidateGoal);
   const survivors = [...candidates].sort((a, b) => b.preliminaryRelevance - a.preliminaryRelevance).slice(0, survivorCap);
 
   onEvent({ type: "stage", message: `Reading recent uploads for ${survivors.length} creators…` });
@@ -359,7 +428,9 @@ export async function runDiscoverySearch(
 /** Worst-case unit estimate, shown before a search runs. */
 export function estimateSearchUnits(phraseCount: number, maxResults: number, needsHeadroom: boolean): number {
   const phrases = Math.max(1, Math.min(phraseCount, MAX_QUERY_PHRASES));
-  const survivorCap = needsHeadroom ? Math.min(maxResults * 2, 60) : maxResults;
-  const lookupCalls = Math.ceil(Math.min(phrases * MAX_SEARCH_HITS_PER_PHRASE, MAX_CANDIDATE_CHANNELS) / CHANNELS_LOOKUP_CHUNK);
-  return phrases * SEARCH_UNIT_COST + lookupCalls * LOOKUP_UNIT_COST + survivorCap * 2 * LOOKUP_UNIT_COST;
+  const candidateGoal = Math.min(MAX_CHANNELS_TO_INSPECT, needsHeadroom ? Math.max(maxResults * 3, maxResults + 20) : maxResults);
+  const maxSearchCalls = phrases * MAX_SEARCH_PAGES_PER_PHRASE;
+  const maxHits = Math.min(maxSearchCalls * MAX_SEARCH_HITS_PER_PHRASE, MAX_CHANNELS_TO_INSPECT);
+  const lookupCalls = Math.ceil(maxHits / CHANNELS_LOOKUP_CHUNK);
+  return maxSearchCalls * SEARCH_UNIT_COST + lookupCalls * LOOKUP_UNIT_COST + candidateGoal * 2 * LOOKUP_UNIT_COST;
 }

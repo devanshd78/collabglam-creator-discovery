@@ -68,12 +68,19 @@ const CATEGORY_OPTIONS = [
 
 const SEARCH_UNIT_COST = 100;
 const MAX_PHRASES = 5;
+const MAX_SEARCH_PAGES_PER_PHRASE = 3;
+const MAX_CHANNELS_TO_INSPECT = 600;
 
-function estimateUnits(query: string, maxResults: number, headroom: boolean, expand: boolean): number {
+function estimateUnits(query: string, maxResults: number, headroom: boolean, expand: boolean, emailOnly: boolean): number {
   const typed = Math.min(new Set(query.split(",").map((s) => s.trim().toLowerCase()).filter(Boolean)).size || 1, MAX_PHRASES);
   const phrases = expand ? MAX_PHRASES : typed;
-  const survivors = headroom ? Math.min(maxResults * 2, 60) : maxResults;
-  return phrases * SEARCH_UNIT_COST + Math.ceil(Math.min(phrases * 50, 150) / 50) + survivors * 2;
+  const candidateGoal = Math.min(
+    MAX_CHANNELS_TO_INSPECT,
+    emailOnly ? Math.max(maxResults * 4, maxResults + 50) : headroom ? Math.max(maxResults * 3, maxResults + 20) : maxResults
+  );
+  const maxSearchCalls = phrases * MAX_SEARCH_PAGES_PER_PHRASE;
+  const maxHits = Math.min(maxSearchCalls * 50, MAX_CHANNELS_TO_INSPECT);
+  return maxSearchCalls * SEARCH_UNIT_COST + Math.ceil(maxHits / 50) + candidateGoal * 2;
 }
 
 function briefKeywords(brief: BriefOption | null): string {
@@ -117,7 +124,10 @@ export default function SearchTab({ brief, defaultListName }: { brief: BriefOpti
   const [result, setResult] = useState<SearchRunResponse | null>(null);
 
   const headroom = !!(postedWithinDays || minAverageViews || maxAverageViews || minEngagementRate || minBrandSafety || minSponsorshipFrequency || hasEmail || categories.length);
-  const estimatedUnits = useMemo(() => estimateUnits(query, maxResults, headroom, expandKeywords), [query, maxResults, headroom, expandKeywords]);
+  const estimatedUnits = useMemo(
+    () => estimateUnits(query, maxResults, headroom, expandKeywords, hasEmail),
+    [query, maxResults, headroom, expandKeywords, hasEmail]
+  );
 
   function toggle(list: string[], setList: (v: string[]) => void, key: string) {
     setList(list.includes(key) ? list.filter((p) => p !== key) : [...list, key]);
@@ -346,7 +356,7 @@ export default function SearchTab({ brief, defaultListName }: { brief: BriefOpti
           ) : (
             <span />
           )}
-          <span className="text-[11px] text-[var(--muted-2)]">~{estimatedUnits} API units for this search</span>
+          <span className="text-[11px] text-[var(--muted-2)]">up to ~{estimatedUnits} API units if extra YouTube pages are needed</span>
         </div>
       </div>
 
