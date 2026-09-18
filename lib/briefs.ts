@@ -50,3 +50,4 @@ export function parseBriefInput(raw: unknown): { data: BriefInput } | { error: s
     },
   };
 }
+   
