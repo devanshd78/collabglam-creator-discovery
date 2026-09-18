@@ -163,4 +163,16 @@ service-account.json
 
 .vercel/
 .netlify/
-.railway/
+.railway/._*
+
+.DS_Store
+._*
+.env
+.env.local
+.env.docker
+
+# Keep Prisma migration SQL files
+!prisma/migrations/**/*.sql
+
+# Ignore macOS AppleDouble metadata everywhere
+._*
