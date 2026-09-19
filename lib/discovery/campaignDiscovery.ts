@@ -30,23 +30,23 @@ export const DEPTH_SETTINGS: Record<DiscoveryDepth, { label: string; maxQueries:
 };
 
 export const ALREADY_CLAIMED = "Already assigned to someone on the team";
-const SEARCH_UNIT_COST = 1;
+const SEARCH_UNIT_COST = 100;
 const LOOKUP_UNIT_COST = 1;
 const SEARCH_BATCH_SIZE = 4;
-const MAX_POOL = 400;
-/** A batch where fewer than this share of the creators it surfaced were new is "mostly duplicates". */
-const NOVELTY_FLOOR = 0.15;
+// Hard filters (subscriber range, market, creator-vs-brand) can remove most raw search hits. Keep a
+// larger pool so a Deep run has enough headroom to still analyze close to its 70-candidate target.
+const MAX_POOL = 800;
 const MINED_TERMS_PER_PASS = 3;
 const ANALYSIS_CONCURRENCY = 8;
 /** Below this many relevant videos in the first 50 uploads, a second page is fetched — relevant
  * content can sit further back in a channel's history. */
 const DEEPER_PAGE_THRESHOLD = 3;
-const SEARCH_DEADLINE_MS = 75_000;
-const ANALYSIS_DEADLINE_MS = 240_000;
+const SEARCH_DEADLINE_MS = 150_000;
+const ANALYSIS_DEADLINE_MS = 420_000;
 
 export function estimateCampaignUnits(depth: DiscoveryDepth): number {
   const settings = DEPTH_SETTINGS[depth];
-  const channelLookups = Math.ceil(Math.min(MAX_POOL, settings.maxQueries * 30) / 50);
+  const channelLookups = Math.ceil(Math.min(MAX_POOL, settings.maxQueries * 50) / 50);
   // Worst case per analyzed creator: two upload pages, their two stats calls, and one call for older
   // videos search surfaced. Most creators need two or three.
   return settings.maxQueries * SEARCH_UNIT_COST + channelLookups * LOOKUP_UNIT_COST + settings.analyzeLimit * 5 * LOOKUP_UNIT_COST;
@@ -159,16 +159,15 @@ export async function runCampaignDiscovery(
 
   /* ------------------------------ Search ------------------------------ */
 
-  const queue = buildKeywordMatrix(profile);
+  const queue = buildKeywordMatrix(profile, settings.maxQueries);
   const queriesRun: string[] = [];
   const minedTerms: string[] = [];
   const pool = new Map<string, PoolEntry>();
   let stopReason = "";
-  let lowNoveltyStreak = 0;
   let batchNumber = 0;
   let lastError = "";
 
-  onEvent({ type: "stage", stage: "search", message: `Searching YouTube videos across ${Math.min(queue.length, settings.maxQueries)} keyword combinations…` });
+  onEvent({ type: "stage", stage: "search", message: `Searching YouTube videos across up to ${settings.maxQueries} keyword combinations…` });
 
   while (queue.length > 0 && queriesRun.length < settings.maxQueries) {
     if (Date.now() - started > SEARCH_DEADLINE_MS) {
@@ -203,18 +202,14 @@ export async function runCampaignDiscovery(
       break;
     }
 
-    const seenThisBatch = new Set<string>();
-    let newChannels = 0;
     responses.forEach((response, i) => {
       if (!response) return;
       const query = batch[i].query;
       for (const hit of response.items) {
-        seenThisBatch.add(hit.channelId);
         let entry = pool.get(hit.channelId);
         if (!entry) {
           entry = { channelId: hit.channelId, queries: new Set(), videos: new Map() };
           pool.set(hit.channelId, entry);
-          newChannels++;
         }
         entry.queries.add(query);
         const known = entry.videos.get(hit.videoId);
@@ -235,9 +230,6 @@ export async function runCampaignDiscovery(
       }
     }
 
-    const novelty = seenThisBatch.size > 0 ? newChannels / seenThisBatch.size : 0;
-    lowNoveltyStreak = batchNumber >= 3 && novelty < NOVELTY_FLOOR ? lowNoveltyStreak + 1 : 0;
-
     onEvent({
       type: "progress",
       queriesRun: queriesRun.length,
@@ -248,10 +240,6 @@ export async function runCampaignDiscovery(
       unitsUsed,
     });
 
-    if (lowNoveltyStreak >= 2) {
-      stopReason = "Diminishing returns — the last two query batches mostly re-found creators already in the pool";
-      break;
-    }
     if (pool.size >= MAX_POOL) {
       stopReason = `Candidate pool reached ${MAX_POOL} creators`;
       break;

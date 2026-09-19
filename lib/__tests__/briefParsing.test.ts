@@ -20,6 +20,15 @@ describe("brief parsing", () => {
     expect(queries.every((q) => !/\b(min|while|try the)\b/.test(q))).toBe(true);
   });
 
+
+  it("builds the full Deep query budget even for a one-product brief", () => {
+    const { profile } = heuristicParseBrief("US sunscreen reviewers");
+    const queries = buildKeywordMatrix(profile, 30).map((q) => q.query);
+    expect(queries).toHaveLength(30);
+    expect(new Set(queries).size).toBe(30);
+    expect(queries.slice(0, 4).some((q) => q.includes("sunscreen"))).toBe(true);
+  });
+
   it("still reads a multi-product brief", () => {
     const { profile } = heuristicParseBrief(
       "Find US YouTube creators with 10K–50K subscribers who create treadmill, walking pad, home gym, fitness equipment, unboxing, testing, and review videos."

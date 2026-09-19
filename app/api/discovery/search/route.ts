@@ -84,7 +84,7 @@ export async function POST(req: NextRequest) {
         maxResults: Math.min(Math.max(Number(body.maxResults) || 20, 5), 50),
       },
       send,
-      findClaimed
+      (channelIds) => findClaimed(channelIds, user.id)
     );
     await recordUnitsUsed(result.unitsUsed).catch(() => undefined);
     const stored = result.results.map(fromDiscovered);

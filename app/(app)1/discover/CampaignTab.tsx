@@ -56,10 +56,10 @@ export default function CampaignTab({ brief, defaultListName }: { brief: BriefOp
   const [emailProgress, setEmailProgress] = useState<Record<string, number> | null>(null);
   const [result, setResult] = useState<CampaignRunResponse | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [visibleTiers, setVisibleTiers] = useState<string[]>(["A", "B"]);
+  const [visibleTiers, setVisibleTiers] = useState<string[]>(["A", "B", "C"]);
   const [emailOnly, setEmailOnly] = useState(false);
 
-  const keywordPreview = useMemo(() => (profile ? buildKeywordMatrix(profile).map((q) => q.query) : []), [profile]);
+  const keywordPreview = useMemo(() => (profile ? buildKeywordMatrix(profile, 30).map((q) => q.query) : []), [profile]);
   const selectedDepth = depths.find((d) => d.key === depth);
   const shown = useMemo(() => {
     if (!result || !profile) return [];
@@ -219,8 +219,8 @@ export default function CampaignTab({ brief, defaultListName }: { brief: BriefOp
                   className="input py-1.5 text-xs"
                   value={profile.creatorCount}
                   min={5}
-                  max={50}
-                  onChange={(e) => patch({ creatorCount: Math.min(Math.max(Number(e.target.value) || 20, 5), 50) })}
+                  max={70}
+                  onChange={(e) => patch({ creatorCount: Math.min(Math.max(Number(e.target.value) || 20, 5), 70) })}
                 />
                 <input
                   type="number"
@@ -276,7 +276,7 @@ export default function CampaignTab({ brief, defaultListName }: { brief: BriefOp
           </label>
 
           <div>
-            <Label>Keyword matrix · {keywordPreview.length} planned searches</Label>
+            <Label>Keyword matrix · {keywordPreview.length} available searches</Label>
             <div className="flex flex-wrap gap-1">
               {keywordPreview.slice(0, 18).map((q) => (
                 <span key={q} className="px-2 py-0.5 rounded text-[11px]" style={{ background: "var(--bg)", color: "var(--muted)" }}>
@@ -295,7 +295,10 @@ export default function CampaignTab({ brief, defaultListName }: { brief: BriefOp
                   <button
                     key={d.key}
                     type="button"
-                    onClick={() => setDepth(d.key)}
+                    onClick={() => {
+                      setDepth(d.key);
+                      patch({ creatorCount: d.analyzeLimit });
+                    }}
                     className="px-3 py-1.5 rounded-lg text-[11.5px] text-left transition-colors border"
                     style={
                       depth === d.key
@@ -305,7 +308,7 @@ export default function CampaignTab({ brief, defaultListName }: { brief: BriefOp
                   >
                     <span className="font-semibold">{d.label}</span>
                     <span className="block text-[10.5px] opacity-80">
-                      up to {d.maxQueries} searches · {d.analyzeLimit} creators · ≤{d.estimatedUnits.toLocaleString()} units
+                      up to {d.maxQueries} searches · analyze up to {d.analyzeLimit} candidates · ≤{d.estimatedUnits.toLocaleString()} units
                     </span>
                   </button>
                 ))}

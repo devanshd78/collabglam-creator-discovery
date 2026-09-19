@@ -115,7 +115,7 @@ export function normalizeProfile(raw: unknown): CampaignProfile {
     desiredContent,
     brands: stringList(r.brands, 8, false),
     minEngagementRate: Number.isFinite(engagement) && engagement > 0 && engagement <= 100 ? engagement : null,
-    creatorCount: creatorCount ? Math.min(Math.max(creatorCount, 5), 50) : DEFAULT_CREATOR_COUNT,
+    creatorCount: creatorCount ? Math.min(Math.max(creatorCount, 5), 70) : DEFAULT_CREATOR_COUNT,
     requireProductReviewers:
       typeof r.requireProductReviewers === "boolean"
         ? r.requireProductReviewers
@@ -379,7 +379,7 @@ function contentFor(profile: CampaignProfile): ContentFormat[] {
  * already have touched every product and the highest-precision shapes, not exhausted every format
  * for the first product while never searching the second.
  */
-export function buildKeywordMatrix(profile: CampaignProfile): KeywordQuery[] {
+export function buildKeywordMatrix(profile: CampaignProfile, minimumSize = MIN_MATRIX_SIZE): KeywordQuery[] {
   const content = contentFor(profile);
   const products = profile.targetProducts;
   const out: KeywordQuery[] = [];
@@ -391,28 +391,76 @@ export function buildKeywordMatrix(profile: CampaignProfile): KeywordQuery[] {
     out.push({ query: q, source });
   };
 
+  // Precision first: every target product gets touched before related-term expansion. This keeps
+  // Quick useful while Standard/Deep have enough distinct queries to actually spend their budgets.
   for (const p of products) add(FORMAT_TEMPLATES[content[0]](p), "product");
   for (const b of profile.brands) add(`${b} ${products[0] ?? profile.category} review`, "brand");
   for (const p of products.slice(0, 2)) add(`best ${p}`, "buying");
-  for (const r of profile.relatedTerms) add(FORMAT_TEMPLATES[content[0]](r), "related");
-  if (content[1]) {
-    for (const p of products) add(FORMAT_TEMPLATES[content[1]](p), "product");
-    for (const r of profile.relatedTerms.slice(0, 6)) add(FORMAT_TEMPLATES[content[1]](r), "related");
-  }
+  if (content[1]) for (const p of products) add(FORMAT_TEMPLATES[content[1]](p), "product");
   for (const format of content.slice(2)) {
     for (const p of products) add(FORMAT_TEMPLATES[format](p), "product");
   }
-  // A brief naming one product and one format yields only a couple of searches, which finds few
-  // creators — pad with the other product-review shapes creators title videos with.
-  for (const format of PADDING_FORMATS) {
-    if (out.length >= MIN_MATRIX_SIZE) break;
-    for (const p of products) add(FORMAT_TEMPLATES[format](p), "product");
+
+  // Related products widen recall only after the exact target products have been searched.
+  for (const r of profile.relatedTerms) add(FORMAT_TEMPLATES[content[0]](r), "related");
+  if (content[1]) for (const r of profile.relatedTerms.slice(0, 6)) add(FORMAT_TEMPLATES[content[1]](r), "related");
+
+  // A small brief used to produce only ~8 queries, so Standard/Deep silently had no way to reach
+  // their 16/30-search budgets. Round-robin through every known content shape for the exact target
+  // products first, then related terms, until the requested matrix size is available.
+  const expansionFormats = [...content, ...CONTENT_FORMATS.filter((format) => !content.includes(format))];
+  for (const format of expansionFormats) {
+    if (out.length >= minimumSize) break;
+    for (const p of products) {
+      add(FORMAT_TEMPLATES[format](p), "product");
+      if (out.length >= minimumSize) break;
+    }
   }
+  for (const format of expansionFormats) {
+    if (out.length >= minimumSize) break;
+    for (const r of profile.relatedTerms) {
+      add(FORMAT_TEMPLATES[format](r), "related");
+      if (out.length >= minimumSize) break;
+    }
+  }
+
+  // One-product campaigns still need enough genuinely different searches for Deep. These are common
+  // creator title phrasings, not random niche substitutions, so they add recall without changing the
+  // requested target product.
+  for (const modifier of DEPTH_QUERY_MODIFIERS) {
+    if (out.length >= minimumSize) break;
+    for (const p of products) {
+      add(modifier(p), "product");
+      if (out.length >= minimumSize) break;
+    }
+  }
+
   return out;
 }
 
 const MIN_MATRIX_SIZE = 8;
-const PADDING_FORMATS: ContentFormat[] = ["unboxing", "test", "worth it", "comparison", "first look", "long term review"];
+const DEPTH_QUERY_MODIFIERS: Array<(term: string) => string> = [
+  (t) => `${t} honest review`,
+  (t) => `${t} pros and cons`,
+  (t) => `${t} before you buy`,
+  (t) => `${t} real world test`,
+  (t) => `${t} first impressions`,
+  (t) => `${t} owner review`,
+  (t) => `${t} full review`,
+  (t) => `${t} review and demo`,
+  (t) => `${t} setup and review`,
+  (t) => `${t} installation and review`,
+  (t) => `${t} comparison review`,
+  (t) => `${t} hands on review`,
+  (t) => `${t} long term experience`,
+  (t) => `${t} tested and reviewed`,
+  (t) => `${t} buying advice`,
+  (t) => `${t} product demonstration`,
+  (t) => `${t} user experience`,
+  (t) => `${t} review after use`,
+  (t) => `${t} detailed review`,
+  (t) => `${t} review guide`,
+];
 
 /**
  * Adjacent products for common campaign categories, so a one-product brief ("sunscreen") still

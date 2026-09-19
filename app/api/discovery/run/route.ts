@@ -42,7 +42,7 @@ export async function POST(req: NextRequest) {
 
   return ndjsonResponse((send) =>
     withYoutubeApiKey(assignedKey.secret, async () => {
-    const result = await runCampaignDiscovery(profile, depth, send, { findClaimed });
+    const result = await runCampaignDiscovery(profile, depth, send, { findClaimed: (channelIds) => findClaimed(channelIds, user.id) });
     await recordUnitsUsed(result.stats.unitsUsed).catch(() => undefined);
     const stored = result.creators.map(fromQualified);
     const savedRun = await saveRun({

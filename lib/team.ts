@@ -5,14 +5,21 @@ import type { Prisma } from "@/app/generated/prisma/client";
 import { briefClosedReason } from "./briefAvailability";
 
 /**
- * Which channels are already unavailable to discovery for this team.
- * A channel is unavailable once it has either been shown in a previous discovery run or saved.
+ * Which channels are unavailable to this discovery request.
+ * Saved creators stay team-wide unique. Discovery reservations owned by OTHER members are hidden,
+ * but a member may re-run their own search without their previous preview results disappearing.
  */
-export async function findClaimed(channelIds: string[]): Promise<Set<string>> {
+export async function findClaimed(channelIds: string[], currentUserId?: string): Promise<Set<string>> {
   if (channelIds.length === 0) return new Set();
   const [saved, assigned] = await Promise.all([
     prisma.creator.findMany({ where: { channelId: { in: channelIds } }, select: { channelId: true } }),
-    prisma.discoveryAssignment.findMany({ where: { channelId: { in: channelIds } }, select: { channelId: true } }),
+    prisma.discoveryAssignment.findMany({
+      where: {
+        channelId: { in: channelIds },
+        ...(currentUserId ? { userId: { not: currentUserId } } : {}),
+      },
+      select: { channelId: true },
+    }),
   ]);
   return new Set([...saved.map((r) => r.channelId), ...assigned.map((r) => r.channelId)]);
 }
@@ -25,10 +32,10 @@ export interface SavedRun {
 }
 
 /**
- * Saves a discovery run and atomically reserves every returned channel for this member.
- * DiscoveryAssignment.channelId is unique, so concurrent searches cannot return the same creator
- * to two different team members. Any channel another request reserved first is removed from the
- * saved run and from the response sent back to the browser.
+ * Saves a discovery run and atomically reserves eligible results for this member.
+ * DiscoveryAssignment.channelId is unique, so concurrent searches cannot return the same eligible
+ * creator to two different team members. A member's own older reservation is reusable on re-runs,
+ * and rejected campaign diagnostics (tier D) are stored without consuming the team reservation pool.
  */
 export async function saveRun(input: {
   userId: string;
@@ -64,9 +71,23 @@ export async function saveRun(input: {
       select: { id: true },
     });
 
-    if (candidates.length > 0) {
+    // Campaign tier D rows are useful diagnostics (the UI can explain why they were rejected), but
+    // reserving rejected channels permanently starves later searches for no benefit. Search-tab
+    // results and campaign A/B/C rows remain team-reserved.
+    const reservable = input.kind === "campaign" ? candidates.filter((r) => r.tier !== "D") : candidates;
+    const diagnosticOnlyIds = new Set(input.kind === "campaign" ? candidates.filter((r) => r.tier === "D").map((r) => r.channelId) : []);
+
+    // Re-check saved creators inside the transaction. This closes the race where another member
+    // saves a creator while this request is still analyzing YouTube data.
+    const alreadySaved = reservable.length
+      ? await tx.creator.findMany({ where: { channelId: { in: reservable.map((r) => r.channelId) } }, select: { channelId: true } })
+      : [];
+    const savedIds = new Set(alreadySaved.map((r) => r.channelId));
+    const availableToReserve = reservable.filter((r) => !savedIds.has(r.channelId));
+
+    if (availableToReserve.length > 0) {
       await tx.discoveryAssignment.createMany({
-        data: candidates.map((r) => ({
+        data: availableToReserve.map((r) => ({
           channelId: r.channelId,
           userId: input.userId,
           runId: run.id,
@@ -77,11 +98,17 @@ export async function saveRun(input: {
       });
     }
 
-    const mine = candidates.length
-      ? await tx.discoveryAssignment.findMany({ where: { runId: run.id }, select: { channelId: true } })
+    // A channel reserved by this same member in an older run is still valid for this new run. The
+    // old code looked only for runId === current run, which is exactly why a second Deep search could
+    // return zero even though the first run had found matching creators.
+    const reservations = availableToReserve.length
+      ? await tx.discoveryAssignment.findMany({
+          where: { channelId: { in: availableToReserve.map((r) => r.channelId) } },
+          select: { channelId: true, userId: true },
+        })
       : [];
-    const assignedIds = new Set(mine.map((r) => r.channelId));
-    const uniqueResults = candidates.filter((r) => assignedIds.has(r.channelId));
+    const assignedToMe = new Set(reservations.filter((r) => r.userId === input.userId).map((r) => r.channelId));
+    const uniqueResults = candidates.filter((r) => diagnosticOnlyIds.has(r.channelId) || assignedToMe.has(r.channelId));
     const newlyHidden = candidates.length - uniqueResults.length;
     const hiddenAsClaimed = input.hiddenAsClaimed + newlyHidden;
 
