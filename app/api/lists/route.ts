@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 import { requireApiUser } from "@/lib/auth";
+import { BriefClosedError, requireBriefAcceptingEntries } from "@/lib/briefAvailability";
 
 /** The signed-in user's own lists, newest first — for the "Save to list" picker. */
 export async function GET() {
@@ -21,8 +22,13 @@ export async function POST(req: NextRequest) {
   const name = typeof body.name === "string" ? body.name.trim().slice(0, 120) : "";
   if (!name) return NextResponse.json({ error: "Give the list a name" }, { status: 400 });
   const briefId = typeof body.briefId === "string" && body.briefId ? body.briefId : null;
-  if (briefId && !(await prisma.brandBrief.findUnique({ where: { id: briefId }, select: { id: true } }))) {
-    return NextResponse.json({ error: "That brand brief no longer exists" }, { status: 404 });
+  if (briefId) {
+    try {
+      await requireBriefAcceptingEntries(briefId);
+    } catch (err) {
+      if (err instanceof BriefClosedError) return NextResponse.json({ error: err.message }, { status: err.status });
+      throw err;
+    }
   }
   const list = await prisma.creatorList.create({ data: { name, ownerId: user.id, briefId }, select: { id: true, name: true } });
   return NextResponse.json({ list });

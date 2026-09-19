@@ -13,11 +13,19 @@ interface Member {
   active: boolean;
   lastLoginAt: string | null;
   saved: number;
+  youtubeApiKeyId: string | null;
 }
 
-export default function UsersClient({ users, meId }: { users: Member[]; meId: string }) {
+interface ApiKeyOption {
+  id: string;
+  label: string;
+  allocatedToId: string | null;
+  allocatedToName: string | null;
+}
+
+export default function UsersClient({ users, meId, apiKeys }: { users: Member[]; meId: string; apiKeys: ApiKeyOption[] }) {
   const router = useRouter();
-  const [form, setForm] = useState({ name: "", email: "", password: "", role: "MEMBER" });
+  const [form, setForm] = useState({ name: "", email: "", password: "", role: "MEMBER", youtubeApiKeyId: "" });
   const [busy, setBusy] = useState(false);
   const [message, setMessage] = useState<{ text: string; ok: boolean } | null>(null);
 
@@ -38,7 +46,7 @@ export default function UsersClient({ users, meId }: { users: Member[]; meId: st
     setMessage(null);
     if (await call("/api/admin/users", "POST", form)) {
       setMessage({ text: `Added ${form.name}. Share their email and password with them directly.`, ok: true });
-      setForm({ name: "", email: "", password: "", role: "MEMBER" });
+      setForm({ name: "", email: "", password: "", role: "MEMBER", youtubeApiKeyId: "" });
     }
     setBusy(false);
   }
@@ -53,7 +61,7 @@ export default function UsersClient({ users, meId }: { users: Member[]; meId: st
     <div className="space-y-5">
       <form onSubmit={add} className="card p-4 space-y-3">
         <h2 className="text-sm font-semibold text-[var(--ink)]">Add a team member</h2>
-        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
+        <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-6 gap-2">
           <input className="input" placeholder="Name" value={form.name} onChange={(e) => setForm({ ...form, name: e.target.value })} required />
           <input className="input" type="email" placeholder="Email" value={form.email} onChange={(e) => setForm({ ...form, email: e.target.value })} required />
           <input
@@ -70,10 +78,28 @@ export default function UsersClient({ users, meId }: { users: Member[]; meId: st
             <option value="MEMBER">Member</option>
             <option value="ADMIN">Admin</option>
           </select>
-          <button type="submit" disabled={busy} className="btn-primary inline-flex items-center justify-center gap-1.5 px-4 text-sm">
+          <select
+            className="input"
+            value={form.youtubeApiKeyId}
+            onChange={(e) => setForm({ ...form, youtubeApiKeyId: e.target.value })}
+            required
+          >
+            <option value="">Select YouTube API key</option>
+            {apiKeys.map((key) => (
+              <option key={key.id} value={key.id} disabled={!!key.allocatedToId}>
+                {key.label} — {key.allocatedToName ? `Allocated to ${key.allocatedToName}` : "Available"}
+              </option>
+            ))}
+          </select>
+          <button type="submit" disabled={busy || apiKeys.length === 0} className="btn-primary inline-flex items-center justify-center gap-1.5 px-4 text-sm">
             {busy ? <Loader2 size={15} className="animate-spin" /> : <UserPlus size={15} />} Add member
           </button>
         </div>
+        {apiKeys.length === 0 && (
+          <p className="text-[12px]" style={{ color: "var(--danger-fg)" }}>
+            No YouTube API keys are configured. Add comma-separated keys to YOUTUBE_API_KEY, then restart/redeploy the app.
+          </p>
+        )}
         {message && (
           <p className="text-[12px]" style={{ color: message.ok ? "var(--success-fg)" : "var(--danger-fg)" }}>
             {message.text}
@@ -82,11 +108,12 @@ export default function UsersClient({ users, meId }: { users: Member[]; meId: st
       </form>
 
       <div className="card overflow-x-auto">
-        <table className="w-full text-[13px] min-w-[760px]">
+        <table className="w-full text-[13px] min-w-[980px]">
           <thead className="border-b border-[var(--border)]">
             <tr className="text-left text-[10.5px] uppercase tracking-wide text-[var(--muted-2)]">
               <th className="px-3 py-2.5">Member</th>
               <th className="px-3 py-2.5">Role</th>
+              <th className="px-3 py-2.5">YouTube API key</th>
               <th className="px-3 py-2.5 text-right">Creators saved</th>
               <th className="px-3 py-2.5">Last sign-in</th>
               <th className="px-3 py-2.5">Access</th>
@@ -115,6 +142,27 @@ export default function UsersClient({ users, meId }: { users: Member[]; meId: st
                     >
                       <option value="MEMBER">Member</option>
                       <option value="ADMIN">Admin</option>
+                    </select>
+                  </td>
+                  <td className="px-3 py-2.5">
+                    <select
+                      className="input w-full min-w-[210px] py-1 text-xs"
+                      style={{ minHeight: 30 }}
+                      value={u.youtubeApiKeyId ?? ""}
+                      onChange={(e) =>
+                        void call(`/api/admin/users/${u.id}`, "PATCH", { youtubeApiKeyId: e.target.value || null })
+                      }
+                    >
+                      <option value="">Unassigned</option>
+                      {apiKeys.map((key) => {
+                        const allocatedElsewhere = !!key.allocatedToId && key.allocatedToId !== u.id;
+                        return (
+                          <option key={key.id} value={key.id} disabled={allocatedElsewhere}>
+                            {key.label}
+                            {key.allocatedToName ? ` — Allocated to ${key.allocatedToName}` : " — Available"}
+                          </option>
+                        );
+                      })}
                     </select>
                   </td>
                   <td className="px-3 py-2.5 text-right tabular-nums">{u.saved}</td>

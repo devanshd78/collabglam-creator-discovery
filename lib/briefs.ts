@@ -10,6 +10,7 @@ export interface BriefInput {
   targetCreators: number | null;
   notes: string | null;
   briefDate: Date;
+  deadlineAt: Date;
 }
 
 function text(value: unknown, max: number): string {
@@ -33,6 +34,9 @@ export function parseBriefInput(raw: unknown): { data: BriefInput } | { error: s
   const dateText = text(r.briefDate, 10);
   const briefDate = /^\d{4}-\d{2}-\d{2}$/.test(dateText) ? new Date(`${dateText}T00:00:00Z`) : null;
   if (!briefDate || Number.isNaN(briefDate.getTime())) return { error: "Pick the date this brief is for" };
+  const deadlineText = text(r.deadlineAt, 40);
+  const deadlineAt = deadlineText ? new Date(deadlineText) : null;
+  if (!deadlineAt || Number.isNaN(deadlineAt.getTime())) return { error: "Campaign deadline is required" };
   const market = text(r.market, 2).toUpperCase();
   return {
     data: {
@@ -47,7 +51,7 @@ export function parseBriefInput(raw: unknown): { data: BriefInput } | { error: s
       targetCreators: count(r.targetCreators),
       notes: text(r.notes, 4000) || null,
       briefDate,
+      deadlineAt,
     },
   };
 }
-   

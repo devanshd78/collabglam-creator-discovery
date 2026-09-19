@@ -2,8 +2,8 @@ import Link from "next/link";
 import { ArrowRight, Megaphone } from "lucide-react";
 import { requirePageUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { getUnitsUsedToday, startOfTodayIst, todayKey } from "@/lib/usage";
-import { briefDay } from "@/lib/format";
+import { dailyUnitBudget, getUnitsUsedToday, startOfTodayIst, todayKey } from "@/lib/usage";
+import { briefDay, dateTime } from "@/lib/format";
 import { StatCard, PageHeader } from "../components/ui";
 
 export default async function Dashboard() {
@@ -20,7 +20,7 @@ export default async function Dashboard() {
     prisma.creator.count({ where: { ...mine, email: { not: null } } }),
     getUnitsUsedToday(),
     prisma.brandBrief.findMany({
-      where: { status: "ACTIVE" },
+      where: { status: "ACTIVE", OR: [{ deadlineAt: null }, { deadlineAt: { gt: new Date() } }] },
       orderBy: [{ briefDate: "desc" }, { createdAt: "desc" }],
       take: 8,
       include: { _count: { select: { creators: true } } },
@@ -33,6 +33,7 @@ export default async function Dashboard() {
   });
   const myCount = new Map(mineByBrief.map((r) => [r.briefId, r._count._all]));
   const todayIso = todayKey();
+  const budget = dailyUnitBudget();
 
   return (
     <div className="space-y-6">
@@ -43,9 +44,9 @@ export default async function Dashboard() {
         <StatCard label="Last 7 days" value={weekSaved} />
         <StatCard label="All time" value={totalSaved} hint={`${totalEmails} with email`} />
         <StatCard
-          label="Tracked YouTube calls today"
-          value={unitsToday.toLocaleString()}
-          hint="Search Queries has a separate project-level daily quota"
+          label="Team API quota today"
+          value={`${Math.round((unitsToday / Math.max(budget, 1)) * 100)}%`}
+          hint={`${unitsToday.toLocaleString()} of ${budget.toLocaleString()} units`}
         />
       </div>
 
@@ -90,6 +91,7 @@ export default async function Dashboard() {
                   </div>
                   <p className="text-[11.5px] font-medium text-[var(--ink)] line-clamp-1">{b.targetNiche}</p>
                   <p className="text-[12.5px] text-[var(--muted)] line-clamp-2">{b.brief}</p>
+                  {b.deadlineAt && <p className="text-[11px] text-[var(--muted-2)]">Deadline: {dateTime(b.deadlineAt)}</p>}
                   <div className="flex items-center justify-between gap-2 pt-1">
                     <span className="text-[11.5px] text-[var(--muted-2)]">
                       Team {b._count.creators}

@@ -41,6 +41,8 @@ export interface BriefOption {
   market: string | null;
   minSubscribers: number | null;
   maxSubscribers: number | null;
+  deadlineAt: string | null;
+  closed: boolean;
 }
 
 /** Reads an NDJSON stream, handing each event to `onEvent`; resolves with the `result` payload. */

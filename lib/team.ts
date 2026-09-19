@@ -2,6 +2,7 @@ import "server-only";
 import { prisma } from "./prisma";
 import type { StoredCreator } from "./creatorRecord";
 import type { Prisma } from "@/app/generated/prisma/client";
+import { briefClosedReason } from "./briefAvailability";
 
 /**
  * Which channels are already unavailable to discovery for this team.
@@ -43,6 +44,13 @@ export async function saveRun(input: {
   const candidates = Array.from(new Map(input.results.map((creator) => [creator.channelId, creator])).values());
 
   return prisma.$transaction(async (tx) => {
+    if (input.briefId) {
+      const brief = await tx.brandBrief.findUnique({ where: { id: input.briefId }, select: { status: true, deadlineAt: true } });
+      if (!brief) throw new Error("That brand brief no longer exists");
+      const closed = briefClosedReason(brief);
+      if (closed) throw new Error(closed);
+    }
+
     const run = await tx.searchRun.create({
       data: {
         userId: input.userId,
@@ -108,6 +116,14 @@ export async function claimCreators(input: { userId: string; listId: string; run
   ]);
   if (!list || list.ownerId !== input.userId) throw new ClaimError("List not found", 404);
   if (!run || run.userId !== input.userId) throw new ClaimError("Search run not found — run the search again", 404);
+
+  const effectiveBriefId = list.briefId ?? run.briefId;
+  if (effectiveBriefId) {
+    const brief = await prisma.brandBrief.findUnique({ where: { id: effectiveBriefId }, select: { status: true, deadlineAt: true } });
+    if (!brief) throw new ClaimError("That brand brief no longer exists", 404);
+    const closed = briefClosedReason(brief);
+    if (closed) throw new ClaimError(closed, 409);
+  }
 
   const wanted = new Set(input.channelIds);
   const rows = (run.results as unknown as StoredCreator[]).filter((r) => wanted.has(r.channelId));

@@ -32,7 +32,7 @@ import { researchEmails } from "../emailResearch";
 export const PLATFORM_KEYS = ["instagram", "tiktok", "twitter", "pinterest", "facebook", "amazonStorefront"] as const;
 export type PlatformKey = (typeof PLATFORM_KEYS)[number];
 
-/** search.list has no boolean query language, so each phrase is its own Search Queries call. */
+/** search.list has no boolean query language, so each phrase is its own 100-unit call. */
 const MAX_QUERY_PHRASES = 5;
 const MAX_SEARCH_HITS_PER_PHRASE = 50;
 const MAX_SEARCH_PAGES_PER_PHRASE = 3;
@@ -43,7 +43,7 @@ const MAX_CHANNELS_TO_INSPECT = 600;
 const RECENT_SAMPLE_SIZE = 15;
 /** The smallest size band offered starts at 1K; an explicit minSubscribers overrides this. */
 const DEFAULT_MIN_SUBSCRIBERS = 1_000;
-const SEARCH_UNIT_COST = 1;
+const SEARCH_UNIT_COST = 100;
 const LOOKUP_UNIT_COST = 1;
 
 export type DiscoverySortBy = "relevance" | "quality" | "subscribers" | "engagement" | "avgViews" | "recentUpload";

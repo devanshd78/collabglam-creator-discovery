@@ -2,7 +2,8 @@ import Link from "next/link";
 import { Plus } from "lucide-react";
 import { requirePageUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
-import { briefDay } from "@/lib/format";
+import { briefDay, dateTime } from "@/lib/format";
+import { isBriefClosed } from "@/lib/briefAvailability";
 import { PageHeader, Td, Th } from "../../components/ui";
 
 export default async function BriefsPage({ searchParams }: { searchParams: Promise<{ show?: string }> }) {
@@ -49,6 +50,7 @@ export default async function BriefsPage({ searchParams }: { searchParams: Promi
                 <Th>Date</Th>
                 <Th>Brand</Th>
                 <Th>Niche / brief</Th>
+                <Th>Deadline</Th>
                 <Th>Creators saved</Th>
                 <Th>With email</Th>
                 <Th>Posted by</Th>
@@ -69,6 +71,10 @@ export default async function BriefsPage({ searchParams }: { searchParams: Promi
                     <div className="font-medium text-[var(--ink)] line-clamp-1">{b.targetNiche}</div>
                     <span className="line-clamp-2">{b.brief}</span>
                   </Td>
+                  <Td className="whitespace-nowrap">
+                    {b.deadlineAt ? dateTime(b.deadlineAt) : "—"}
+                    {isBriefClosed(b) && b.status === "ACTIVE" ? <div className="text-[10.5px]" style={{ color: "var(--danger-fg)" }}>Deadline reached</div> : null}
+                  </Td>
                   <Td className="tabular-nums">
                     {b._count.creators}
                     {b.targetCreators ? <span className="text-[var(--muted-2)]"> / {b.targetCreators}</span> : null}
@@ -76,9 +82,13 @@ export default async function BriefsPage({ searchParams }: { searchParams: Promi
                   <Td className="tabular-nums">{emailsByBrief.get(b.id) ?? 0}</Td>
                   <Td className="text-[var(--muted)]">{b.createdBy.name}</Td>
                   <Td>
-                    <Link href={`/discover?brief=${b.id}`} className="text-xs font-medium text-[var(--brand-teal-dark)] whitespace-nowrap">
-                      Find creators →
-                    </Link>
+                    {isBriefClosed(b) ? (
+                      <span className="text-xs font-medium" style={{ color: "var(--danger-fg)" }}>Closed</span>
+                    ) : (
+                      <Link href={`/discover?brief=${b.id}`} className="text-xs font-medium text-[var(--brand-teal-dark)] whitespace-nowrap">
+                        Find creators →
+                      </Link>
+                    )}
                   </Td>
                 </tr>
               ))}

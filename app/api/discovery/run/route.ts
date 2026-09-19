@@ -6,7 +6,8 @@ import { fromQualified } from "@/lib/creatorRecord";
 import { ndjsonResponse } from "@/lib/ndjson";
 import { findClaimed, saveRun } from "@/lib/team";
 import { recordUnitsUsed } from "@/lib/usage";
-import { prisma } from "@/lib/prisma";
+import { BriefClosedError, requireBriefAcceptingEntries } from "@/lib/briefAvailability";
+import { getAssignedYoutubeApiKey, withYoutubeApiKey, YoutubeApiKeyAssignmentError } from "@/lib/youtube/keys";
 
 export const maxDuration = 600;
 
@@ -21,16 +22,26 @@ export async function POST(req: NextRequest) {
   if (profile.targetProducts.length === 0) {
     return NextResponse.json({ error: "Add at least one target product or niche before running discovery" }, { status: 400 });
   }
-  if (!process.env.YOUTUBE_API_KEY?.trim()) {
-    return NextResponse.json({ error: "YOUTUBE_API_KEY is not set — ask your admin" }, { status: 500 });
-  }
   const depth: DiscoveryDepth = typeof body.depth === "string" && body.depth in DEPTH_SETTINGS ? (body.depth as DiscoveryDepth) : "standard";
   const briefId = typeof body.briefId === "string" && body.briefId ? body.briefId : null;
-  if (briefId && !(await prisma.brandBrief.findUnique({ where: { id: briefId }, select: { id: true } }))) {
-    return NextResponse.json({ error: "That brand brief no longer exists" }, { status: 404 });
+  if (briefId) {
+    try {
+      await requireBriefAcceptingEntries(briefId);
+    } catch (err) {
+      if (err instanceof BriefClosedError) return NextResponse.json({ error: err.message }, { status: err.status });
+      throw err;
+    }
+  }
+  let assignedKey: { id: string; secret: string; label: string };
+  try {
+    assignedKey = await getAssignedYoutubeApiKey(user.id);
+  } catch (err) {
+    if (err instanceof YoutubeApiKeyAssignmentError) return NextResponse.json({ error: err.message }, { status: err.status });
+    throw err;
   }
 
-  return ndjsonResponse(async (send) => {
+  return ndjsonResponse((send) =>
+    withYoutubeApiKey(assignedKey.secret, async () => {
     const result = await runCampaignDiscovery(profile, depth, send, { findClaimed });
     await recordUnitsUsed(result.stats.unitsUsed).catch(() => undefined);
     const stored = result.creators.map(fromQualified);
@@ -72,5 +83,6 @@ export async function POST(req: NextRequest) {
       notQualified: { ...result.stats.notQualified, [ALREADY_CLAIMED]: savedRun.hiddenAsClaimed },
     };
     return { runId: savedRun.runId, creators: savedRun.results, details, tierCounts, stats };
-  });
+    })
+  );
 }

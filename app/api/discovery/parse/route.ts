@@ -3,6 +3,8 @@ import { heuristicParseBrief, normalizeProfile } from "@/lib/discovery/campaignP
 import { DEPTH_SETTINGS, estimateCampaignUnits, type DiscoveryDepth } from "@/lib/discovery/campaignDiscovery";
 import { requireApiUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
+import { briefClosedReason } from "@/lib/briefAvailability";
+import { hasUsableAssignedYoutubeApiKey } from "@/lib/youtube/keys";
 
 /**
  * Brief → structured discovery profile. Spends no YouTube quota. When the brief comes from an
@@ -10,7 +12,7 @@ import { prisma } from "@/lib/prisma";
  * whatever the text parser guessed.
  */
 export async function POST(req: NextRequest) {
-  const { error } = await requireApiUser();
+  const { user, error } = await requireApiUser();
   if (error) return error;
   const body = (await req.json().catch(() => ({}))) as { brief?: unknown; briefId?: unknown };
   const brief = typeof body.brief === "string" ? body.brief.trim() : "";
@@ -21,6 +23,11 @@ export async function POST(req: NextRequest) {
     typeof body.briefId === "string" && body.briefId
       ? await prisma.brandBrief.findUnique({ where: { id: body.briefId } })
       : null;
+
+  if (source) {
+    const closed = briefClosedReason(source);
+    if (closed) return NextResponse.json({ error: closed }, { status: 409 });
+  }
 
   const nicheTerms = source?.targetNiche
     ? source.targetNiche
@@ -54,5 +61,5 @@ export async function POST(req: NextRequest) {
     ...DEPTH_SETTINGS[key],
     estimatedUnits: estimateCampaignUnits(key),
   }));
-  return NextResponse.json({ ...parsed, depths, youtubeKeyConfigured: Boolean(process.env.YOUTUBE_API_KEY?.trim()) });
+  return NextResponse.json({ ...parsed, depths, youtubeKeyConfigured: await hasUsableAssignedYoutubeApiKey(user.id) });
 }

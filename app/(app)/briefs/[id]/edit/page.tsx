@@ -12,7 +12,10 @@ export default async function EditBriefPage({ params }: { params: Promise<{ id: 
   return (
     <div className="space-y-5 max-w-3xl">
       <PageHeader title={`Edit — ${brief.brandName}`} />
-      <BriefForm id={brief.id} initial={{ ...brief, briefDate: isoDay(brief.briefDate) }} />
+      <BriefForm
+        id={brief.id}
+        initial={{ ...brief, briefDate: isoDay(brief.briefDate), deadlineAt: brief.deadlineAt?.toISOString() ?? null }}
+      />
     </div>
   );
 }

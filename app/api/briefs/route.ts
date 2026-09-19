@@ -8,6 +8,9 @@ export async function POST(req: NextRequest) {
   if (error) return error;
   const parsed = parseBriefInput(await req.json().catch(() => null));
   if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
+  if (parsed.data.deadlineAt.getTime() <= Date.now()) {
+    return NextResponse.json({ error: "Campaign deadline must be in the future" }, { status: 400 });
+  }
   const brief = await prisma.brandBrief.create({ data: { ...parsed.data, createdById: user.id }, select: { id: true } });
   return NextResponse.json({ id: brief.id });
 }

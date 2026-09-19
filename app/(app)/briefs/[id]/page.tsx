@@ -4,6 +4,7 @@ import { Download, ExternalLink, Pencil, Search } from "lucide-react";
 import { requirePageUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
 import { briefDay, compact, dateTime } from "@/lib/format";
+import { isBriefClosed } from "@/lib/briefAvailability";
 import { MARKETS } from "@/lib/markets";
 import { PageHeader, StatCard, Td, Th } from "../../../components/ui";
 import BriefStatusButton from "./BriefStatusButton";
@@ -30,6 +31,7 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
   const total = byUser.reduce((s, r) => s + r._count._all, 0);
   const totalEmail = byUserEmail.reduce((s, r) => s + r._count._all, 0);
   const marketLabel = MARKETS.find((m) => m.code === brief.market)?.label;
+  const closed = isBriefClosed(brief);
   const range =
     brief.minSubscribers || brief.maxSubscribers
       ? `${brief.minSubscribers ? compact(brief.minSubscribers) : "any"} – ${brief.maxSubscribers ? compact(brief.maxSubscribers) : "any"} subscribers`
@@ -39,7 +41,7 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
     <div className="space-y-5">
       <PageHeader
         title={brief.brandName}
-        subtitle={`${brief.title !== brief.brandName ? `${brief.title} · ` : ""}${briefDay(brief.briefDate)} · posted by ${brief.createdBy.name}${brief.status === "ARCHIVED" ? " · archived" : ""}`}
+        subtitle={`${brief.title !== brief.brandName ? `${brief.title} · ` : ""}${briefDay(brief.briefDate)} · posted by ${brief.createdBy.name}${brief.status === "ARCHIVED" ? " · archived" : closed ? " · deadline reached" : ""}`}
         actions={
           <>
             {user.role === "ADMIN" && (
@@ -53,9 +55,13 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
                 <BriefStatusButton id={brief.id} status={brief.status} />
               </>
             )}
-            <Link href={`/discover?brief=${brief.id}`} className="btn-primary inline-flex items-center gap-1 px-4 py-1.5 text-xs">
-              <Search size={13} /> Find creators
-            </Link>
+            {closed ? (
+              <span className="btn-secondary inline-flex items-center gap-1 px-4 py-1.5 text-xs" style={{ color: "var(--danger-fg)" }}>Deadline reached</span>
+            ) : (
+              <Link href={`/discover?brief=${brief.id}`} className="btn-primary inline-flex items-center gap-1 px-4 py-1.5 text-xs">
+                <Search size={13} /> Find creators
+              </Link>
+            )}
           </>
         }
       />
@@ -65,6 +71,7 @@ export default async function BriefPage({ params }: { params: Promise<{ id: stri
         <div className="flex flex-wrap gap-2 text-[11.5px]">
           <Chip>Niche: {brief.targetNiche}</Chip>
           <Chip>Platform: YouTube</Chip>
+          {brief.deadlineAt && <Chip>Deadline: {dateTime(brief.deadlineAt)}</Chip>}
           {marketLabel && brief.market && <Chip>Country: {marketLabel}</Chip>}
           {range && <Chip>{range}</Chip>}
           {brief.targetCreators && <Chip>{brief.targetCreators} creators wanted</Chip>}

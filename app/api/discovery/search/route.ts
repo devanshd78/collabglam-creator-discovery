@@ -7,6 +7,8 @@ import { fromDiscovered } from "@/lib/creatorRecord";
 import { ndjsonResponse } from "@/lib/ndjson";
 import { findClaimed, saveRun } from "@/lib/team";
 import { recordUnitsUsed } from "@/lib/usage";
+import { BriefClosedError, requireBriefAcceptingEntries } from "@/lib/briefAvailability";
+import { getAssignedYoutubeApiKey, withYoutubeApiKey, YoutubeApiKeyAssignmentError } from "@/lib/youtube/keys";
 
 export const maxDuration = 300;
 
@@ -34,17 +36,30 @@ export async function POST(req: NextRequest) {
   const body = (await req.json().catch(() => ({}))) as Record<string, unknown>;
   const query = typeof body.query === "string" ? body.query.trim() : "";
   if (!query) return NextResponse.json({ error: "Enter a niche or keyword to search for" }, { status: 400 });
-  if (!process.env.YOUTUBE_API_KEY?.trim()) {
-    return NextResponse.json({ error: "YOUTUBE_API_KEY is not set — ask your admin" }, { status: 500 });
-  }
   const briefId = typeof body.briefId === "string" && body.briefId ? body.briefId : null;
+  if (briefId) {
+    try {
+      await requireBriefAcceptingEntries(briefId);
+    } catch (err) {
+      if (err instanceof BriefClosedError) return NextResponse.json({ error: err.message }, { status: err.status });
+      throw err;
+    }
+  }
+  let assignedKey: { id: string; secret: string; label: string };
+  try {
+    assignedKey = await getAssignedYoutubeApiKey(user.id);
+  } catch (err) {
+    if (err instanceof YoutubeApiKeyAssignmentError) return NextResponse.json({ error: err.message }, { status: err.status });
+    throw err;
+  }
   const platforms = stringList(body.platforms).filter((p): p is PlatformKey => VALID_PLATFORMS.has(p));
   const subscriberTiers = stringList(body.subscriberTiers).filter((t) => VALID_TIERS.has(t));
   const categories = stringList(body.categories).filter((c) => VALID_CATEGORIES.has(c));
   const country = typeof body.country === "string" && /^[A-Za-z]{2}$/.test(body.country) ? body.country.toUpperCase() : undefined;
   const language = typeof body.language === "string" && /^[a-z]{2}$/.test(body.language) ? body.language : undefined;
 
-  return ndjsonResponse(async (send) => {
+  return ndjsonResponse((send) =>
+    withYoutubeApiKey(assignedKey.secret, async () => {
     const result = await runDiscoverySearch(
       {
         query,
@@ -90,5 +105,6 @@ export async function POST(req: NextRequest) {
       searchedPhrases: result.searchedPhrases,
       unitsUsed: result.unitsUsed,
     };
-  });
+    })
+  );
 }

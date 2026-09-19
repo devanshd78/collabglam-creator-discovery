@@ -44,7 +44,7 @@ export default function DiscoverClient({ briefs, initialBriefId, initialTab }: {
           {briefs.map((b) => (
             <option key={b.id} value={b.id}>
               {b.brandName} · {new Date(`${b.briefDate}T00:00:00Z`).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "UTC" })}
-              {b.title !== b.brandName ? ` · ${b.title}` : ""}
+              {b.title !== b.brandName ? ` · ${b.title}` : ""}{b.closed ? " · Deadline reached" : ""}
             </option>
           ))}
         </select>
@@ -52,6 +52,11 @@ export default function DiscoverClient({ briefs, initialBriefId, initialTab }: {
           <p className="text-[12px] text-[var(--muted)] flex-1 min-w-[200px] line-clamp-2">
             <span className="font-medium text-[var(--ink)]">Niche:</span> {brief.targetNiche} · {brief.brief}
           </p>
+        )}
+        {brief?.closed && (
+          <div className="w-full rounded-md border px-3 py-2 text-[12px]" style={{ borderColor: "var(--danger-border)", background: "var(--danger-bg)", color: "var(--danger-fg)" }}>
+            Campaign deadline reached — discovery and new creator entries are closed for this campaign.
+          </div>
         )}
       </div>
 

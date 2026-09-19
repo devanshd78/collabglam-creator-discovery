@@ -28,8 +28,10 @@ model User {
   passwordHash String
   role         Role      @default(MEMBER)
   active       Boolean   @default(true)
-  lastLoginAt  DateTime?
-  createdAt    DateTime  @default(now())
+  lastLoginAt     DateTime?
+  /// Stable fingerprint of the YouTube API key assigned to this user. The secret itself stays in env.
+  youtubeApiKeyId String?   @unique
+  createdAt       DateTime  @default(now())
 
   briefs          BrandBrief[]
   lists           CreatorList[]
@@ -58,6 +60,8 @@ model BrandBrief {
   notes            String?     @db.Text
   /// The day the brief is for (date only, stored at UTC midnight).
   briefDate        DateTime    @db.Date
+  /// Exact instant after which this campaign no longer accepts discovery/list entries.
+  deadlineAt       DateTime?
   status           BriefStatus @default(ACTIVE)
   createdById      String
   createdAt        DateTime    @default(now())

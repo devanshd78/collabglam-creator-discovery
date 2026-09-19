@@ -97,6 +97,10 @@ export default function CampaignTab({ brief, defaultListName }: { brief: BriefOp
   }
 
   async function runDiscovery() {
+    if (brief?.closed) {
+      setError("This campaign deadline has been reached. No further entries are accepted.");
+      return;
+    }
     if (!profile) return;
     if (profile.targetProducts.length === 0) {
       setError("Add at least one target product or niche");
@@ -307,7 +311,7 @@ export default function CampaignTab({ brief, defaultListName }: { brief: BriefOp
                 ))}
               </div>
             </div>
-            <button onClick={() => void runDiscovery()} disabled={running} className="btn-primary inline-flex items-center gap-1.5 px-5 py-2 text-sm">
+            <button onClick={() => void runDiscovery()} disabled={running || !!brief?.closed} className="btn-primary inline-flex items-center gap-1.5 px-5 py-2 text-sm">
               {running ? <Loader2 size={15} className="animate-spin" /> : <Play size={15} />}
               {running ? "Running…" : `Run discovery${selectedDepth ? ` (≤${selectedDepth.estimatedUnits.toLocaleString()} units)` : ""}`}
             </button>

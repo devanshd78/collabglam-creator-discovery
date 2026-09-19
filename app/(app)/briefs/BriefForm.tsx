@@ -17,12 +17,21 @@ export interface BriefFormValues {
   targetCreators?: number | null;
   notes?: string | null;
   briefDate: string;
+  deadlineAt?: string | null;
 }
 
 const REQUIREMENTS_EXAMPLE =
   "We’re looking for creators to test and review our new faucet filter. Reviews, installation videos, comparisons, demonstrations and real-use feedback are all relevant.";
 
 const NICHE_EXAMPLE = "Home Improvement, Kitchen, DIY, Plumbing, Home Appliances, Water Filtration";
+
+function toLocalDateTimeInput(value: string | null | undefined): string {
+  if (!value) return "";
+  const d = new Date(value);
+  if (Number.isNaN(d.getTime())) return "";
+  const pad = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
 
 export default function BriefForm({ id, initial }: { id?: string; initial: BriefFormValues }) {
   const router = useRouter();
@@ -38,6 +47,7 @@ export default function BriefForm({ id, initial }: { id?: string; initial: Brief
     targetCreators: initial.targetCreators?.toString() ?? "",
     notes: initial.notes ?? "",
     briefDate: initial.briefDate,
+    deadlineAt: toLocalDateTimeInput(initial.deadlineAt),
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -52,7 +62,10 @@ export default function BriefForm({ id, initial }: { id?: string; initial: Brief
       const res = await fetch(id ? `/api/briefs/${id}` : "/api/briefs", {
         method: id ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(v),
+        body: JSON.stringify({
+          ...v,
+          deadlineAt: v.deadlineAt ? new Date(v.deadlineAt).toISOString() : "",
+        }),
       });
       const data = await res.json().catch(() => ({}));
       if (!res.ok) throw new Error(data.error ?? "Couldn't save the brief");
@@ -66,7 +79,7 @@ export default function BriefForm({ id, initial }: { id?: string; initial: Brief
 
   return (
     <form onSubmit={submit} className="card p-5 space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <Field label="Brand name *">
           <input className="input" value={v.brandName} onChange={set("brandName")} required maxLength={120} />
         </Field>
@@ -75,6 +88,10 @@ export default function BriefForm({ id, initial }: { id?: string; initial: Brief
         </Field>
         <Field label="Brief date *">
           <input className="input" type="date" value={v.briefDate} onChange={set("briefDate")} required />
+        </Field>
+        <Field label="Deadline *">
+          <input className="input" type="datetime-local" value={v.deadlineAt} onChange={set("deadlineAt")} required />
+          <span className="block text-[10.5px] text-[var(--muted-2)]">No new discovery or creator entries are accepted after this time.</span>
         </Field>
       </div>
 
