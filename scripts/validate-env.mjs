@@ -1,15 +1,22 @@
-import "dotenv/config";
+import nextEnv from "@next/env";
+
+// Match the app's precedence, including .env.local overrides.
+nextEnv.loadEnvConfig(process.cwd(), process.env.NODE_ENV !== "production");
 
 const errors = [];
 const warnings = [];
-const required = ["DATABASE_URL", "SESSION_SECRET", "YOUTUBE_API_KEY"];
+const required = ["DATABASE_URL", "SESSION_SECRET"];
 
 for (const name of required) {
   if (!process.env[name]?.trim()) errors.push(`${name} is required`);
 }
 
+const youtubeVariableNames = Object.keys(process.env).filter((name) =>
+  /^YOUTUBE_API_KEYS?$|^YOUTUBE_API_KEY_?[1-9]\d*$/i.test(name)
+);
+
 const placeholders = /YOUR_|CHANGE_ME|user:password@host|ep-cool-cloud-a1b2c3d4|ep-REALNAME|example\.com/i;
-for (const name of ["DATABASE_URL", "DIRECT_URL", "SESSION_SECRET", "YOUTUBE_API_KEY"]) {
+for (const name of ["DATABASE_URL", "DIRECT_URL", "SESSION_SECRET", ...youtubeVariableNames]) {
   const value = process.env[name]?.trim();
   if (value && placeholders.test(value)) errors.push(`${name} still contains a placeholder value`);
 }
@@ -17,8 +24,8 @@ for (const name of ["DATABASE_URL", "DIRECT_URL", "SESSION_SECRET", "YOUTUBE_API
 const secret = process.env.SESSION_SECRET?.trim() || "";
 if (secret && secret.length < 32) errors.push("SESSION_SECRET must be at least 32 characters");
 
-const rawYoutubeKeys = String(process.env.YOUTUBE_API_KEY ?? "")
-  .split(",")
+const rawYoutubeKeys = youtubeVariableNames
+  .flatMap((name) => String(process.env[name] ?? "").split(/[\n,;]+/))
   .map((key) => key.trim().replace(/^["']+|["']+$/g, ""))
   .filter(Boolean);
 const youtubeKeys = [...new Set(rawYoutubeKeys)];

@@ -30,6 +30,7 @@ export default function ResultsTable({
   runId,
   creators,
   briefId,
+  briefClosed = false,
   defaultListName,
   renderDetail,
   toolbar,
@@ -37,6 +38,7 @@ export default function ResultsTable({
   runId: string;
   creators: StoredCreator[];
   briefId: string | null;
+  briefClosed?: boolean;
   defaultListName: string;
   renderDetail?: (c: StoredCreator) => React.ReactNode;
   toolbar?: React.ReactNode;
@@ -76,6 +78,7 @@ export default function ResultsTable({
             <input
               type="checkbox"
               checked={allSelected}
+              disabled={briefClosed}
               onChange={() => setSelected(allSelected ? new Set() : new Set(selectable.map((c) => c.channelId)))}
             />
             Select all ({selectable.length})
@@ -84,7 +87,7 @@ export default function ResultsTable({
             type="button"
             onClick={() => setSelected(new Set(withEmail.map((c) => c.channelId)))}
             className="font-medium text-[var(--brand-teal-dark)]"
-            disabled={withEmail.length === 0}
+            disabled={briefClosed || withEmail.length === 0}
           >
             Select all with email ({withEmail.length})
           </button>
@@ -94,6 +97,7 @@ export default function ResultsTable({
           runId={runId}
           channelIds={[...selected]}
           briefId={briefId}
+          locked={briefClosed}
           defaultListName={defaultListName}
           onSaved={onSaved}
         />
@@ -131,7 +135,7 @@ export default function ResultsTable({
                         <input
                           type="checkbox"
                           aria-label={`Select ${c.title}`}
-                          disabled={!!rowStatus}
+                          disabled={briefClosed || !!rowStatus}
                           checked={selected.has(c.channelId)}
                           onChange={() => toggle(c.channelId)}
                         />
@@ -295,12 +299,14 @@ function SaveToList({
   runId,
   channelIds,
   briefId,
+  locked,
   defaultListName,
   onSaved,
 }: {
   runId: string;
   channelIds: string[];
   briefId: string | null;
+  locked: boolean;
   defaultListName: string;
   onSaved: (listName: string, saved: string[], taken: { channelId: string; takenBy: string }[]) => void;
 }) {
@@ -330,6 +336,10 @@ function SaveToList({
   }, [briefId]);
 
   async function save() {
+    if (locked) {
+      setMessage({ text: "Campaign deadline reached — this brief is locked.", tone: "error" });
+      return;
+    }
     if (channelIds.length === 0) return;
     setBusy(true);
     setMessage(null);
@@ -382,7 +392,7 @@ function SaveToList({
           {message.text}
         </span>
       )}
-      <select className="input w-auto py-1 text-xs" style={{ minHeight: 32 }} value={target} onChange={(e) => setTarget(e.target.value)} disabled={!lists}>
+      <select className="input w-auto py-1 text-xs" style={{ minHeight: 32 }} value={target} onChange={(e) => setTarget(e.target.value)} disabled={!lists || locked}>
         <option value={NEW_LIST}>+ New list…</option>
         {(lists ?? []).map((l) => (
           <option key={l.id} value={l.id}>
@@ -398,11 +408,12 @@ function SaveToList({
           onChange={(e) => setNewName(e.target.value)}
           placeholder="List name"
           aria-label="New list name"
+          disabled={locked}
         />
       )}
       <button
         onClick={() => void save()}
-        disabled={busy || channelIds.length === 0 || (target === NEW_LIST && !newName.trim())}
+        disabled={locked || busy || channelIds.length === 0 || (target === NEW_LIST && !newName.trim())}
         className="btn-primary inline-flex items-center gap-1.5 px-4 py-1.5 text-xs disabled:opacity-50"
       >
         {busy ? <Loader2 size={13} className="animate-spin" /> : <FolderPlus size={13} />}

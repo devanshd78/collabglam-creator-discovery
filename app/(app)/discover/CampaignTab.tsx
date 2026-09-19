@@ -71,6 +71,10 @@ export default function CampaignTab({ brief, defaultListName }: { brief: BriefOp
   }
 
   async function buildProfile() {
+    if (brief?.closed) {
+      setError("This campaign deadline has been reached. No further entries are accepted.");
+      return;
+    }
     if (!briefText.trim()) {
       setError("Describe the campaign first");
       return;
@@ -151,7 +155,7 @@ export default function CampaignTab({ brief, defaultListName }: { brief: BriefOp
           onChange={(e) => setBriefText(e.target.value)}
         />
         <div className="flex items-center gap-2 flex-wrap">
-          <button onClick={() => void buildProfile()} disabled={parsing || running} className="btn-primary inline-flex items-center gap-1.5 px-4 py-2 text-sm">
+          <button onClick={() => void buildProfile()} disabled={parsing || running || !!brief?.closed} className="btn-primary inline-flex items-center gap-1.5 px-4 py-2 text-sm">
             {parsing ? <Loader2 size={15} className="animate-spin" /> : <Wand2 size={15} />}
             {parsing ? "Reading brief…" : "Build discovery profile"}
           </button>
@@ -398,6 +402,7 @@ export default function CampaignTab({ brief, defaultListName }: { brief: BriefOp
             runId={result.runId}
             creators={shown}
             briefId={brief?.id ?? null}
+            briefClosed={!!brief?.closed}
             defaultListName={defaultListName}
             toolbar={
               <label className="flex items-center gap-1.5 cursor-pointer text-[var(--muted)]">

@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useState } from "react";
+import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
 import { Megaphone, Search, Target } from "lucide-react";
 import type { BriefOption } from "@/lib/discoveryTypes";
@@ -13,42 +13,7 @@ export default function DiscoverClient({ briefs, initialBriefId, initialTab }: {
   const router = useRouter();
   const [briefId, setBriefId] = useState(briefs.some((b) => b.id === initialBriefId) ? initialBriefId : "");
   const [tab, setTab] = useState<Tab>(initialTab);
-  const [liveClosedBriefId, setLiveClosedBriefId] = useState<string | null>(null);
-
-  const rawBrief = useMemo(() => briefs.find((b) => b.id === briefId) ?? null, [briefs, briefId]);
-
-  // The server is the final authority, but this timer makes the UI lock itself as soon as the
-  // selected campaign reaches its deadline without requiring a page refresh.
-  useEffect(() => {
-    setLiveClosedBriefId(null);
-    if (!rawBrief?.deadlineAt || rawBrief.closed) return;
-
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const deadlineMs = new Date(rawBrief.deadlineAt).getTime();
-    if (!Number.isFinite(deadlineMs)) return;
-
-    const schedule = () => {
-      const remaining = deadlineMs - Date.now();
-      if (remaining <= 0) {
-        setLiveClosedBriefId(rawBrief.id);
-        router.refresh();
-        return;
-      }
-      // Re-check at least once a minute, then fire very close to the exact deadline.
-      timer = setTimeout(schedule, Math.min(remaining + 50, 60_000));
-    };
-
-    schedule();
-    return () => {
-      if (timer) clearTimeout(timer);
-    };
-  }, [rawBrief?.id, rawBrief?.deadlineAt, rawBrief?.closed, router]);
-
-  const brief = useMemo(() => {
-    if (!rawBrief) return null;
-    return { ...rawBrief, closed: rawBrief.closed || liveClosedBriefId === rawBrief.id };
-  }, [rawBrief, liveClosedBriefId]);
-
+  const brief = useMemo(() => briefs.find((b) => b.id === briefId) ?? null, [briefs, briefId]);
   const today = new Date().toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "Asia/Kolkata" });
   const defaultListName = brief ? `${brief.brandName} – ${today}` : `Creators – ${today}`;
 
@@ -71,7 +36,6 @@ export default function DiscoverClient({ briefs, initialBriefId, initialTab }: {
           className="input w-auto min-w-[260px] py-1.5 text-sm"
           value={briefId}
           onChange={(e) => {
-            setLiveClosedBriefId(null);
             setBriefId(e.target.value);
             update(e.target.value, tab);
           }}
@@ -80,7 +44,7 @@ export default function DiscoverClient({ briefs, initialBriefId, initialTab }: {
           {briefs.map((b) => (
             <option key={b.id} value={b.id}>
               {b.brandName} · {new Date(`${b.briefDate}T00:00:00Z`).toLocaleDateString("en-IN", { day: "numeric", month: "short", timeZone: "UTC" })}
-              {b.title !== b.brandName ? ` · ${b.title}` : ""}{b.closed || liveClosedBriefId === b.id ? " · Deadline reached" : ""}
+              {b.title !== b.brandName ? ` · ${b.title}` : ""}{b.closed ? " · Deadline reached" : ""}
             </option>
           ))}
         </select>
@@ -90,11 +54,8 @@ export default function DiscoverClient({ briefs, initialBriefId, initialTab }: {
           </p>
         )}
         {brief?.closed && (
-          <div
-            className="w-full rounded-md border px-3 py-2 text-[12px]"
-            style={{ borderColor: "var(--danger-border)", background: "var(--danger-bg)", color: "var(--danger-fg)" }}
-          >
-            Campaign deadline reached — this brief is locked. Discovery, new lists, and new creator entries are no longer accepted.
+          <div className="w-full rounded-md border px-3 py-2 text-[12px]" style={{ borderColor: "var(--danger-border)", background: "var(--danger-bg)", color: "var(--danger-fg)" }}>
+            Campaign deadline reached — discovery and new creator entries are closed for this campaign.
           </div>
         )}
       </div>

@@ -2,7 +2,7 @@
 
 import { useState } from "react";
 import { useRouter } from "next/navigation";
-import { CalendarDays, Clock3, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { MARKETS } from "@/lib/markets";
 
 export interface BriefFormValues {
@@ -25,36 +25,16 @@ const REQUIREMENTS_EXAMPLE =
 
 const NICHE_EXAMPLE = "Home Improvement, Kitchen, DIY, Plumbing, Home Appliances, Water Filtration";
 
-function localDeadlineParts(value: string | null | undefined): { date: string; time: string } {
-  if (!value) return { date: "", time: "" };
+function toLocalDateTimeInput(value: string | null | undefined): string {
+  if (!value) return "";
   const d = new Date(value);
-  if (Number.isNaN(d.getTime())) return { date: "", time: "" };
+  if (Number.isNaN(d.getTime())) return "";
   const pad = (n: number) => String(n).padStart(2, "0");
-  return {
-    date: `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`,
-    time: `${pad(d.getHours())}:${pad(d.getMinutes())}`,
-  };
-}
-
-function normalizeDeadlineTime(value: string): string {
-  const trimmed = value.trim();
-  const match = trimmed.match(/^(\d{1,2}):(\d{1,2})$/);
-  if (!match) return trimmed;
-
-  const hours = Number(match[1]);
-  const minutes = Number(match[2]);
-  if (hours > 23 || minutes > 59) return trimmed;
-
-  return `${String(hours).padStart(2, "0")}:${String(minutes).padStart(2, "0")}`;
-}
-
-function isValidDeadlineTime(value: string): boolean {
-  return /^(?:[01]\d|2[0-3]):[0-5]\d$/.test(value);
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}T${pad(d.getHours())}:${pad(d.getMinutes())}`;
 }
 
 export default function BriefForm({ id, initial }: { id?: string; initial: BriefFormValues }) {
   const router = useRouter();
-  const initialDeadline = localDeadlineParts(initial.deadlineAt);
   const [v, setV] = useState({
     brandName: initial.brandName ?? "",
     title: initial.title ?? "",
@@ -67,54 +47,24 @@ export default function BriefForm({ id, initial }: { id?: string; initial: Brief
     targetCreators: initial.targetCreators?.toString() ?? "",
     notes: initial.notes ?? "",
     briefDate: initial.briefDate,
-    // Keep the deadline date and time separate so the date picker stays native while the time remains
-    // directly editable. Default the deadline day to the brief day for new briefs.
-    deadlineDate: initialDeadline.date || initial.briefDate,
-    deadlineTime: initialDeadline.time,
+    deadlineAt: toLocalDateTimeInput(initial.deadlineAt),
   });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
-
-  const set = (key: keyof typeof v) =>
-    (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
-      setV((prev) => ({ ...prev, [key]: e.target.value }));
+  const set = (key: keyof typeof v) => (e: React.ChangeEvent<HTMLInputElement | HTMLTextAreaElement | HTMLSelectElement>) =>
+    setV((prev) => ({ ...prev, [key]: e.target.value }));
 
   async function submit(e: React.FormEvent) {
     e.preventDefault();
-    setError(null);
-
-    if (!v.deadlineDate || !v.deadlineTime) {
-      setError("Choose both a deadline date and time");
-      return;
-    }
-
-    const normalizedDeadlineTime = normalizeDeadlineTime(v.deadlineTime);
-    if (!isValidDeadlineTime(normalizedDeadlineTime)) {
-      setError("Enter the deadline time as HH:MM, for example 18:30");
-      return;
-    }
-
-    // No timezone suffix on purpose: this represents the admin's local wall-clock choice.
-    // JavaScript converts that instant to UTC for storage before it is sent to the API.
-    const deadline = new Date(`${v.deadlineDate}T${normalizedDeadlineTime}:00`);
-    if (Number.isNaN(deadline.getTime())) {
-      setError("Choose a valid campaign deadline");
-      return;
-    }
-    if (deadline.getTime() <= Date.now()) {
-      setError("Campaign deadline must be in the future");
-      return;
-    }
-
     setBusy(true);
+    setError(null);
     try {
-      const { deadlineDate: _deadlineDate, deadlineTime: _deadlineTime, ...formValues } = v;
       const res = await fetch(id ? `/api/briefs/${id}` : "/api/briefs", {
         method: id ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
-          ...formValues,
-          deadlineAt: deadline.toISOString(),
+          ...v,
+          deadlineAt: v.deadlineAt ? new Date(v.deadlineAt).toISOString() : "",
         }),
       });
       const data = await res.json().catch(() => ({}));
@@ -129,91 +79,20 @@ export default function BriefForm({ id, initial }: { id?: string; initial: Brief
 
   return (
     <form onSubmit={submit} className="card p-5 space-y-4">
-      <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-3">
         <Field label="Brand name *">
           <input className="input" value={v.brandName} onChange={set("brandName")} required maxLength={120} />
         </Field>
         <Field label="Campaign name">
-          <input
-            className="input"
-            value={v.title}
-            onChange={set("title")}
-            placeholder="e.g. Frizzlife MF1080 Faucet Filter – Creator Collaboration"
-            maxLength={160}
-          />
+          <input className="input" value={v.title} onChange={set("title")} placeholder="e.g. Frizzlife MF1080 Faucet Filter – Creator Collaboration" maxLength={160} />
         </Field>
         <Field label="Brief date *">
-          <div className="relative min-w-0">
-            <input
-              className="input date-picker-input min-w-0 pr-10"
-              type="date"
-              value={v.briefDate}
-              onChange={set("briefDate")}
-              required
-            />
-
-            <CalendarDays
-              size={16}
-              strokeWidth={1.9}
-              aria-hidden="true"
-              className="date-picker-icon pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"
-            />
-          </div>
+          <input className="input" type="date" value={v.briefDate} onChange={set("briefDate")} required />
         </Field>
-
-        <div className="space-y-1">
-          <span className="text-[11.5px] font-medium text-[var(--muted)]">Deadline *</span>
-          <div className="grid grid-cols-2 gap-2">
-            <div className="relative min-w-0">
-              <input
-                className="input deadline-date-input min-w-0 pr-10"
-                type="date"
-                aria-label="Deadline date"
-                value={v.deadlineDate}
-                onChange={set("deadlineDate")}
-                required
-              />
-              <CalendarDays
-                size={16}
-                strokeWidth={1.9}
-                aria-hidden="true"
-                className="deadline-picker-icon pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"
-              />
-            </div>
-
-            <div className="relative min-w-0">
-              <input
-                className="input min-w-0 pr-10 tabular-nums"
-                type="text"
-                inputMode="numeric"
-                autoComplete="off"
-                aria-label="Deadline time"
-                aria-describedby="deadline-time-help"
-                placeholder="HH:MM"
-                value={v.deadlineTime}
-                onChange={set("deadlineTime")}
-                onBlur={() =>
-                  setV((prev) => ({
-                    ...prev,
-                    deadlineTime: normalizeDeadlineTime(prev.deadlineTime),
-                  }))
-                }
-                pattern="(?:[01]\d|2[0-3]):[0-5]\d"
-                maxLength={5}
-                required
-              />
-              <Clock3
-                size={16}
-                strokeWidth={1.9}
-                aria-hidden="true"
-                className="deadline-picker-icon pointer-events-none absolute right-3 top-1/2 -translate-y-1/2"
-              />
-            </div>
-          </div>
-          <span id="deadline-time-help" className="block text-[10.5px] text-[var(--muted-2)]">
-            Time uses 24-hour format (for example, 18:30). At this exact time the campaign locks automatically. New discovery runs, lists, and creator entries are rejected.
-          </span>
-        </div>
+        <Field label="Deadline *">
+          <input className="input" type="datetime-local" value={v.deadlineAt} onChange={set("deadlineAt")} required />
+          <span className="block text-[10.5px] text-[var(--muted-2)]">No new discovery or creator entries are accepted after this time.</span>
+        </Field>
       </div>
 
       <Field label="Campaign requirements *">

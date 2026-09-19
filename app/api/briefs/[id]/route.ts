@@ -16,8 +16,16 @@ export async function PATCH(req: NextRequest, { params }: Ctx) {
     await prisma.brandBrief.update({ where: { id }, data: { status: body.status } });
     return NextResponse.json({ ok: true });
   }
+
   const parsed = parseBriefInput(body);
   if ("error" in parsed) return NextResponse.json({ error: parsed.error }, { status: 400 });
+
+  // Do not allow an admin form save to create an already-expired deadline.
+  // To reopen an expired campaign, the admin must explicitly choose a new future deadline.
+  if (parsed.data.deadlineAt.getTime() <= Date.now()) {
+    return NextResponse.json({ error: "Campaign deadline must be in the future" }, { status: 400 });
+  }
+
   await prisma.brandBrief.update({ where: { id }, data: parsed.data });
   return NextResponse.json({ ok: true });
 }

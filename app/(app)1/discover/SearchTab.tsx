@@ -383,14 +383,7 @@ export default function SearchTab({ brief, defaultListName }: { brief: BriefOpti
             {result.hiddenAsClaimed > 0 ? ` · ${result.hiddenAsClaimed} hidden because they were already assigned to the team` : ""} · searched{" "}
             {result.searchedPhrases.map((p) => `“${p}”`).join(", ")} · {result.unitsUsed} API units
           </p>
-          <ResultsTable
-            key={result.runId}
-            runId={result.runId}
-            creators={result.creators}
-            briefId={brief?.id ?? null}
-            briefClosed={!!brief?.closed}
-            defaultListName={defaultListName}
-          />
+          <ResultsTable key={result.runId} runId={result.runId} creators={result.creators} briefId={brief?.id ?? null} defaultListName={defaultListName} />
         </div>
       )}
     </div>

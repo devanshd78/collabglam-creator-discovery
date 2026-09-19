@@ -1,15 +1,37 @@
 /* eslint-disable @typescript-eslint/no-explicit-any -- raw YouTube API payloads are untyped JSON */
+
 import "server-only";
+
 import { toNumber } from "./numbers";
 import { getBestThumbnail } from "./fields";
 import { youtubeApiKeysForCurrentContext } from "./keys";
 
 /**
- * YouTube Data API client. Discovery requests run inside a per-user key context, so one assigned
- * key is used for that user only. Calls outside that context retain the legacy pool fallback.
+ * YouTube Data API client.
+ *
+ * Every discovery request runs inside the logged-in
+ * user's assigned API-key context.
+ *
+ * IMPORTANT:
+ * There is NO API-key rotation or fallback.
+ *
+ * Example:
+ *
+ * Priyanshu -> Key 1
+ *
+ * If Key 1 reaches its quota:
+ *
+ * - request stops
+ * - Key 2 is NOT used
+ * - Key 3 is NOT used
+ * - Key 4 is NOT used
+ *
+ * Priyanshu must wait for the assigned key's quota
+ * to become available again.
  */
 
-const YOUTUBE_BASE_URL = "https://www.googleapis.com/youtube/v3";
+const YOUTUBE_BASE_URL =
+  "https://www.googleapis.com/youtube/v3";
 
 const PUBLIC_CHANNEL_PARTS = [
   "snippet",
@@ -21,34 +43,68 @@ const PUBLIC_CHANNEL_PARTS = [
   "localizations",
 ].join(",");
 
-
-/**
- * Where in the key list to start.
- *
- * Serverless instances are short-lived and don't share memory, so a fixed start would hammer key #1
- * from every cold instance and exhaust its daily quota while the rest sat idle. Starting at a
- * random offset spreads load across instances; within one instance the cursor advances to the
- * next key on quota errors.
- */
-let keyCursor = -1;
-
 export class YouTubeApiError extends Error {
   readonly statusCode: number;
   readonly reason: string;
-  constructor(message: string, statusCode: number, reason = "") {
+
+  constructor(
+    message: string,
+    statusCode: number,
+    reason = ""
+  ) {
     super(message);
+
     this.name = "YouTubeApiError";
     this.statusCode = statusCode;
     this.reason = reason;
   }
 }
 
-/** Quota and bad-key failures are the ones worth retrying on a different key; everything else is
- * a real error that another key would fail at identically. */
-function isQuotaOrKeyError(status: number, reason: string): boolean {
-  if (![400, 403, 429].includes(status)) return false;
-  return /quotaexceeded|dailylimitexceeded|ratelimitexceeded|userratelimitexceeded|keyinvalid|forbidden/.test(
-    reason.toLowerCase()
+function isDailyQuotaError(
+  reason: string,
+  message: string
+): boolean {
+  const text =
+    `${reason} ${message}`.toLowerCase();
+
+  return /quotaexceeded|dailylimitexceeded|daily limit|quota metric|quota limit/.test(
+    text
+  );
+}
+
+function isRateLimitError(
+  reason: string,
+  message: string
+): boolean {
+  const text =
+    `${reason} ${message}`.toLowerCase();
+
+  return /ratelimitexceeded|userratelimitexceeded|too many requests/.test(
+    text
+  );
+}
+
+function isInvalidKeyError(
+  reason: string,
+  message: string
+): boolean {
+  const text =
+    `${reason} ${message}`.toLowerCase();
+
+  return /keyinvalid|api key not valid|api key invalid|invalid api key/.test(
+    text
+  );
+}
+
+function isApiDisabledError(
+  reason: string,
+  message: string
+): boolean {
+  const text =
+    `${reason} ${message}`.toLowerCase();
+
+  return /accessnotconfigured|api has not been used|api is disabled|service disabled/.test(
+    text
   );
 }
 
@@ -57,86 +113,242 @@ type YouTubeListResponse = {
   nextPageToken?: string;
 };
 
-export async function youtubeGet<T = YouTubeListResponse>(
+/**
+ * Makes one YouTube request using EXACTLY ONE
+ * assigned API key.
+ */
+export async function youtubeGet<
+  T = YouTubeListResponse
+>(
   endpoint: string,
-  params: Record<string, string | number | undefined>
+  params: Record<
+    string,
+    string | number | undefined
+  >
 ): Promise<T> {
-  const keys = youtubeApiKeysForCurrentContext();
-  if (keys.length === 0) {
+  const keys =
+    youtubeApiKeysForCurrentContext();
+
+  /**
+   * Strictly expect one key.
+   */
+  if (keys.length !== 1) {
     throw new YouTubeApiError(
-      "No YouTube API key is available for this request.",
+      "No assigned YouTube API key is available for this request.",
       500
     );
   }
 
-  if (keyCursor < 0) keyCursor = Math.floor(Math.random() * keys.length);
+  const key = keys[0];
 
-  let lastError: YouTubeApiError | null = null;
+  const search =
+    new URLSearchParams({
+      key,
+    });
 
-  for (let attempt = 0; attempt < keys.length; attempt += 1) {
-    const keyIndex = (keyCursor + attempt) % keys.length;
-
-    const search = new URLSearchParams({ key: keys[keyIndex] });
-    for (const [name, value] of Object.entries(params)) {
-      if (value === undefined || value === null || value === "") continue;
-      search.set(name, String(value));
-    }
-
-    let res: Response;
-    try {
-      res = await fetch(`${YOUTUBE_BASE_URL}/${endpoint}?${search.toString()}`, {
-        signal: AbortSignal.timeout(Number(process.env.YOUTUBE_TIMEOUT_MS ?? 20000)),
-        cache: "no-store",
-      });
-    } catch (err) {
-      lastError = new YouTubeApiError(
-        err instanceof Error ? err.message : "YouTube API request failed.",
-        504
-      );
+  for (
+    const [name, value]
+    of Object.entries(params)
+  ) {
+    if (
+      value === undefined ||
+      value === null ||
+      value === ""
+    ) {
       continue;
     }
 
-    if (res.ok) {
-      keyCursor = keyIndex;
-      return (await res.json()) as T;
-    }
-
-    const payload = await res.json().catch(() => null);
-    const apiError = (payload as { error?: { message?: string; errors?: { reason?: string }[] } } | null)?.error;
-    const reason = apiError?.errors?.[0]?.reason ?? "";
-    lastError = new YouTubeApiError(
-      apiError?.message ?? "YouTube API request failed.",
-      res.status,
-      reason
+    search.set(
+      name,
+      String(value)
     );
-
-    if (attempt < keys.length - 1 && isQuotaOrKeyError(res.status, reason)) continue;
-    throw lastError;
   }
 
-  throw lastError ?? new YouTubeApiError("YouTube API request failed.", 500);
+  let response: Response;
+
+  try {
+    response = await fetch(
+      `${YOUTUBE_BASE_URL}/${endpoint}?${search.toString()}`,
+      {
+        signal:
+          AbortSignal.timeout(
+            Number(
+              process.env
+                .YOUTUBE_TIMEOUT_MS ??
+                20000
+            )
+          ),
+
+        cache: "no-store",
+      }
+    );
+  } catch (err) {
+    throw new YouTubeApiError(
+      err instanceof Error
+        ? err.message
+        : "YouTube API request failed.",
+      504
+    );
+  }
+
+  if (response.ok) {
+    return (await response.json()) as T;
+  }
+
+  const payload =
+    await response
+      .json()
+      .catch(() => null);
+
+  const apiError = (
+    payload as {
+      error?: {
+        message?: string;
+
+        errors?: Array<{
+          reason?: string;
+          message?: string;
+        }>;
+      };
+    } | null
+  )?.error;
+
+  const reason =
+    apiError?.errors?.[0]
+      ?.reason ?? "";
+
+  const message =
+    apiError?.message ??
+    apiError?.errors?.[0]
+      ?.message ??
+    "YouTube API request failed.";
+
+  /**
+   * Daily quota exhausted.
+   *
+   * DO NOT fall back to another team key.
+   */
+  if (
+    isDailyQuotaError(
+      reason,
+      message
+    )
+  ) {
+    throw new YouTubeApiError(
+      "Your assigned YouTube API key has reached its quota. No other team member's API key will be used. Please wait until the quota renews and try again.",
+      429,
+      reason
+    );
+  }
+
+  /**
+   * Temporary rate limit.
+   *
+   * Still do NOT switch keys.
+   */
+  if (
+    isRateLimitError(
+      reason,
+      message
+    )
+  ) {
+    throw new YouTubeApiError(
+      "Your assigned YouTube API key is temporarily rate-limited. No other API key will be used. Please wait and try again.",
+      429,
+      reason
+    );
+  }
+
+  /**
+   * Invalid key.
+   */
+  if (
+    isInvalidKeyError(
+      reason,
+      message
+    )
+  ) {
+    throw new YouTubeApiError(
+      "Your assigned YouTube API key is invalid. Ask an admin to assign or configure another key for your account.",
+      response.status,
+      reason
+    );
+  }
+
+  /**
+   * API disabled for this key/project.
+   */
+  if (
+    isApiDisabledError(
+      reason,
+      message
+    )
+  ) {
+    throw new YouTubeApiError(
+      "The YouTube Data API is not enabled for your assigned API key. Ask an admin to check the key configuration.",
+      response.status,
+      reason
+    );
+  }
+
+  throw new YouTubeApiError(
+    message,
+    response.status,
+    reason
+  );
 }
 
-/** Same batching trick as getVideosStats — one call for up to 50 channels instead of one call
- * each, since channels.list accepts a comma-joined id list just like videos.list does. This is
- * what makes Discovery's search results affordable: a page of 50 search hits costs 1 extra unit
- * to fully resolve, not 50. */
-export async function getChannelsDetailsBatch(channelIds: string[]): Promise<Record<string, any>[]> {
-  const ids = [...new Set(channelIds.filter(Boolean))].slice(0, 50);
-  if (ids.length === 0) return [];
+/**
+ * Same batching trick as getVideosStats:
+ * one call for up to 50 channels.
+ */
+export async function getChannelsDetailsBatch(
+  channelIds: string[]
+): Promise<Record<string, any>[]> {
+  const ids = [
+    ...new Set(
+      channelIds.filter(Boolean)
+    ),
+  ].slice(0, 50);
 
-  const data = await youtubeGet("channels", { part: PUBLIC_CHANNEL_PARTS, id: ids.join(",") });
-  return (data.items ?? []) as Record<string, any>[];
+  if (ids.length === 0) {
+    return [];
+  }
+
+  const data =
+    await youtubeGet("channels", {
+      part: PUBLIC_CHANNEL_PARTS,
+      id: ids.join(","),
+    });
+
+  return (
+    data.items ?? []
+  ) as Record<string, any>[];
 }
 
 export interface SearchChannelsOptions {
-  /** 1-50, YouTube's own per-page cap. */
+  /**
+   * 1-50, YouTube's own per-page cap.
+   */
   maxResults?: number;
-  /** ISO 3166-1 alpha-2 (e.g. "IN", "US"). Biases relevance toward that region — it does NOT
-   * hard-filter a channel's actual location, which only channels.list's snippet.country reports. */
+
+  /**
+   * ISO 3166-1 alpha-2.
+   *
+   * Example:
+   * US
+   * IN
+   * CA
+   */
   regionCode?: string;
+
   relevanceLanguage?: string;
-  order?: "relevance" | "viewCount" | "date";
+
+  order?:
+    | "relevance"
+    | "viewCount"
+    | "date";
+
   pageToken?: string;
 }
 
@@ -147,41 +359,73 @@ export interface SearchChannelHit {
 }
 
 /**
- * search.list, type=channel — the one endpoint that finds channels by keyword rather than
- * requiring an already-known ID. Costs 100 quota units per call regardless of maxResults, so
- * callers should fetch one full page (up to 50) and filter it down rather than requesting a
- * small page and re-searching to top it up — see lib/youtube/discoveryEngine.ts.
- *
- * Returns bare id/title/thumbnail only; a search hit's own snippet.description is truncated and
- * unsuitable for email/platform-link extraction — resolve full channel details separately via
- * getChannelsDetailsBatch for anything beyond "does this channel exist and what's it called."
+ * search.list type=channel.
  */
 export async function searchChannels(
   query: string,
   opts: SearchChannelsOptions = {}
-): Promise<{ items: SearchChannelHit[]; nextPageToken?: string }> {
-  const data = await youtubeGet("search", {
-    part: "snippet",
-    q: query,
-    type: "channel",
-    maxResults: Math.min(Math.max(opts.maxResults ?? 25, 1), 50),
-    regionCode: opts.regionCode,
-    relevanceLanguage: opts.relevanceLanguage,
-    order: opts.order,
-    pageToken: opts.pageToken,
-  });
+): Promise<{
+  items: SearchChannelHit[];
+  nextPageToken?: string;
+}> {
+  const data =
+    await youtubeGet("search", {
+      part: "snippet",
 
-  const items = ((data.items ?? []) as any[])
-    // A channel-type search hit carries its id at snippet.channelId, with id.channelId as a
-    // fallback — the same shape lib/youtube/resolveInput.ts already relies on.
+      q: query,
+
+      type: "channel",
+
+      maxResults: Math.min(
+        Math.max(
+          opts.maxResults ?? 25,
+          1
+        ),
+        50
+      ),
+
+      regionCode:
+        opts.regionCode,
+
+      relevanceLanguage:
+        opts.relevanceLanguage,
+
+      order:
+        opts.order,
+
+      pageToken:
+        opts.pageToken,
+    });
+
+  const items = (
+    (data.items ?? []) as any[]
+  )
     .map((hit) => ({
-      channelId: hit.snippet?.channelId ?? hit.id?.channelId ?? "",
-      title: hit.snippet?.title ?? "",
-      thumbnailUrl: getBestThumbnail(hit.snippet?.thumbnails),
-    }))
-    .filter((hit) => hit.channelId);
+      channelId:
+        hit.snippet?.channelId ??
+        hit.id?.channelId ??
+        "",
 
-  return { items, nextPageToken: data.nextPageToken };
+      title:
+        hit.snippet?.title ??
+        "",
+
+      thumbnailUrl:
+        getBestThumbnail(
+          hit.snippet?.thumbnails
+        ),
+    }))
+    .filter(
+      (hit) =>
+        Boolean(hit.channelId)
+    );
+
+  return {
+    items,
+
+    nextPageToken:
+      data.nextPageToken,
+  };
 }
 
 export interface VideoSearchHit {
@@ -193,100 +437,288 @@ export interface VideoSearchHit {
 }
 
 export interface SearchVideosOptions {
-  /** 1-50, YouTube's own per-page cap. */
+  /**
+   * 1-50.
+   */
   maxResults?: number;
+
   regionCode?: string;
+
   relevanceLanguage?: string;
-  order?: "relevance" | "viewCount" | "date";
+
+  order?:
+    | "relevance"
+    | "viewCount"
+    | "date";
+
   pageToken?: string;
 }
 
-/** search.list HTML-escapes snippet text while videos.list does not — decoded so a title read from a
- * search hit matches the same title read later from videos.list. */
-function decodeEntities(text: string): string {
+/**
+ * YouTube search results can contain HTML
+ * entities in titles.
+ */
+function decodeEntities(
+  text: string
+): string {
   return text
-    .replace(/&#(\d+);/g, (_, code) => String.fromCharCode(Number(code)))
-    .replace(/&quot;/g, '"')
-    .replace(/&apos;/g, "'")
-    .replace(/&lt;/g, "<")
-    .replace(/&gt;/g, ">")
-    .replace(/&amp;/g, "&");
+    .replace(
+      /&#(\d+);/g,
+      (_, code) =>
+        String.fromCharCode(
+          Number(code)
+        )
+    )
+    .replace(
+      /&quot;/g,
+      '"'
+    )
+    .replace(
+      /&apos;/g,
+      "'"
+    )
+    .replace(
+      /&lt;/g,
+      "<"
+    )
+    .replace(
+      /&gt;/g,
+      ">"
+    )
+    .replace(
+      /&amp;/g,
+      "&"
+    );
 }
 
 /**
- * search.list, type=video. Campaign discovery searches videos rather than channels because a
- * creator's channel name and blurb rarely say "treadmill reviews" even when half their uploads are
- * exactly that — the videos do. 100 quota units per call regardless of maxResults.
+ * search.list type=video.
  */
 export async function searchVideos(
   query: string,
   opts: SearchVideosOptions = {}
-): Promise<{ items: VideoSearchHit[]; nextPageToken?: string }> {
-  const data = await youtubeGet("search", {
-    part: "snippet",
-    q: query,
-    type: "video",
-    maxResults: Math.min(Math.max(opts.maxResults ?? 50, 1), 50),
-    regionCode: opts.regionCode,
-    relevanceLanguage: opts.relevanceLanguage,
-    order: opts.order,
-    pageToken: opts.pageToken,
-  });
+): Promise<{
+  items: VideoSearchHit[];
+  nextPageToken?: string;
+}> {
+  const data =
+    await youtubeGet("search", {
+      part: "snippet",
 
-  const items = ((data.items ?? []) as any[])
+      q: query,
+
+      type: "video",
+
+      maxResults: Math.min(
+        Math.max(
+          opts.maxResults ?? 50,
+          1
+        ),
+        50
+      ),
+
+      regionCode:
+        opts.regionCode,
+
+      relevanceLanguage:
+        opts.relevanceLanguage,
+
+      order:
+        opts.order,
+
+      pageToken:
+        opts.pageToken,
+    });
+
+  const items = (
+    (data.items ?? []) as any[]
+  )
     .map((hit) => ({
-      videoId: hit.id?.videoId ?? "",
-      channelId: hit.snippet?.channelId ?? "",
-      channelTitle: decodeEntities(hit.snippet?.channelTitle ?? ""),
-      title: decodeEntities(hit.snippet?.title ?? ""),
-      publishedAt: hit.snippet?.publishedAt ?? null,
-    }))
-    .filter((hit) => hit.videoId && hit.channelId);
+      videoId:
+        hit.id?.videoId ??
+        "",
 
-  return { items, nextPageToken: (data as { nextPageToken?: string }).nextPageToken };
+      channelId:
+        hit.snippet
+          ?.channelId ??
+        "",
+
+      channelTitle:
+        decodeEntities(
+          hit.snippet
+            ?.channelTitle ??
+            ""
+        ),
+
+      title:
+        decodeEntities(
+          hit.snippet
+            ?.title ??
+            ""
+        ),
+
+      publishedAt:
+        hit.snippet
+          ?.publishedAt ??
+        null,
+    }))
+    .filter(
+      (hit) =>
+        Boolean(
+          hit.videoId &&
+            hit.channelId
+        )
+    );
+
+  return {
+    items,
+
+    nextPageToken:
+      (
+        data as {
+          nextPageToken?: string;
+        }
+      ).nextPageToken,
+  };
 }
 
-/** One page of a channel's uploads playlist (newest first) plus the token for the next page —
- * getRecentChannelVideoIds only ever returns the first page. 1 quota unit per page. */
+/**
+ * One page of a channel's uploads playlist.
+ */
 export async function getChannelUploadsPage(
   uploadPlaylistId: string,
   pageToken?: string,
   maxResults = 50
-): Promise<{ videoIds: string[]; nextPageToken?: string }> {
-  if (!uploadPlaylistId) return { videoIds: [] };
-  const data = await youtubeGet("playlistItems", {
-    part: "contentDetails",
-    playlistId: uploadPlaylistId,
-    maxResults: Math.min(Math.max(maxResults, 1), 50),
-    pageToken,
-  });
-  const videoIds: string[] = ((data.items ?? []) as any[]).map((item) => item.contentDetails?.videoId).filter(Boolean);
-  return { videoIds, nextPageToken: (data as { nextPageToken?: string }).nextPageToken };
+): Promise<{
+  videoIds: string[];
+  nextPageToken?: string;
+}> {
+  if (!uploadPlaylistId) {
+    return {
+      videoIds: [],
+    };
+  }
+
+  const data =
+    await youtubeGet(
+      "playlistItems",
+      {
+        part: "contentDetails",
+
+        playlistId:
+          uploadPlaylistId,
+
+        maxResults: Math.min(
+          Math.max(
+            maxResults,
+            1
+          ),
+          50
+        ),
+
+        pageToken,
+      }
+    );
+
+  const videoIds: string[] = (
+    (data.items ?? []) as any[]
+  )
+    .map(
+      (item) =>
+        item.contentDetails
+          ?.videoId
+    )
+    .filter(Boolean);
+
+  return {
+    videoIds,
+
+    nextPageToken:
+      (
+        data as {
+          nextPageToken?: string;
+        }
+      ).nextPageToken,
+  };
 }
 
-export async function getRecentChannelVideoIds(uploadPlaylistId: string, limit = 12): Promise<string[]> {
-  if (!uploadPlaylistId) return [];
+export async function getRecentChannelVideoIds(
+  uploadPlaylistId: string,
+  limit = 12
+): Promise<string[]> {
+  if (!uploadPlaylistId) {
+    return [];
+  }
 
-  const safeLimit = Math.min(Math.max(toNumber(limit, 12), 1), 50);
-  const data = await youtubeGet("playlistItems", {
-    part: "snippet,contentDetails,status",
-    playlistId: uploadPlaylistId,
-    maxResults: safeLimit,
-  });
+  const safeLimit =
+    Math.min(
+      Math.max(
+        toNumber(
+          limit,
+          12
+        ),
+        1
+      ),
+      50
+    );
 
-  return ((data.items ?? []) as any[])
-    .map((item) => item.contentDetails?.videoId ?? item.snippet?.resourceId?.videoId)
+  const data =
+    await youtubeGet(
+      "playlistItems",
+      {
+        part:
+          "snippet,contentDetails,status",
+
+        playlistId:
+          uploadPlaylistId,
+
+        maxResults:
+          safeLimit,
+      }
+    );
+
+  return (
+    (data.items ?? []) as any[]
+  )
+    .map(
+      (item) =>
+        item.contentDetails
+          ?.videoId ??
+        item.snippet
+          ?.resourceId
+          ?.videoId
+    )
     .filter(Boolean);
 }
 
-export async function getVideosStats(videoIds: string[]): Promise<Record<string, any>[]> {
-  const ids = [...new Set(videoIds.filter(Boolean))].slice(0, 50);
-  if (ids.length === 0) return [];
+export async function getVideosStats(
+  videoIds: string[]
+): Promise<
+  Record<string, any>[]
+> {
+  const ids = [
+    ...new Set(
+      videoIds.filter(Boolean)
+    ),
+  ].slice(0, 50);
 
-  const data = await youtubeGet("videos", {
-    part: "snippet,contentDetails,statistics,status,topicDetails",
-    id: ids.join(","),
-  });
-  return (data.items ?? []) as Record<string, any>[];
+  if (ids.length === 0) {
+    return [];
+  }
+
+  const data =
+    await youtubeGet(
+      "videos",
+      {
+        part:
+          "snippet,contentDetails,statistics,status,topicDetails",
+
+        id:
+          ids.join(","),
+      }
+    );
+
+  return (
+    data.items ?? []
+  ) as Record<string, any>[];
 }
-

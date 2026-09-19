@@ -270,3 +270,30 @@ input[type="radio"] {
   cursor: pointer;
   flex-shrink: 0;
 }
+
+/* Deadline controls -------------------------------------------------------
+   Chrome/Safari render the built-in date icon in their own color. Hide that
+   glyph and draw our own theme-aware icon while keeping the native picker
+   target underneath it clickable. */
+.deadline-date-input::-webkit-calendar-picker-indicator {
+  opacity: 0;
+  cursor: pointer;
+}
+
+.deadline-picker-icon {
+  color: var(--ink);
+}
+
+:root[data-theme="dark"] .deadline-date-input {
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] .deadline-date-input {
+  color-scheme: light;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) .deadline-date-input {
+    color-scheme: dark;
+  }
+}
