@@ -63,7 +63,7 @@ export default async function ListPage({ params }: { params: Promise<{ id: strin
           </Link>
         </div>
       ) : (
-        <ListCreatorsTable listId={list.id} rows={rows} />
+        <ListCreatorsTable listId={list.id} rows={rows} allowSelectiveExport={user.role === "ADMIN"} />
       )}
     </div>
   );

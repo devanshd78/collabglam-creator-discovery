@@ -72,7 +72,7 @@ export default async function MergedTeamListPage() {
       {rows.length === 0 ? (
         <div className="card p-10 text-center text-sm text-[var(--muted-2)]">No team creators have been saved yet.</div>
       ) : (
-        <ListCreatorsTable rows={rows} showTeamContext />
+        <ListCreatorsTable rows={rows} showTeamContext allowSelectiveExport />
       )}
     </div>
   );

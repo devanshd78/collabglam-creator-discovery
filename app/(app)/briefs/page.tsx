@@ -82,13 +82,20 @@ export default async function BriefsPage({ searchParams }: { searchParams: Promi
                   <Td className="tabular-nums">{emailsByBrief.get(b.id) ?? 0}</Td>
                   <Td className="text-[var(--muted)]">{b.createdBy.name}</Td>
                   <Td>
-                    {isBriefClosed(b) ? (
-                      <span className="text-xs font-medium" style={{ color: "var(--danger-fg)" }}>Closed</span>
-                    ) : (
-                      <Link href={`/discover?brief=${b.id}`} className="text-xs font-medium text-[var(--brand-teal-dark)] whitespace-nowrap">
-                        Find creators →
-                      </Link>
-                    )}
+                    <div className="flex items-center gap-3 whitespace-nowrap">
+                      {user.role === "ADMIN" && (
+                        <Link href={`/briefs/${b.id}/edit`} className="text-xs font-medium text-[var(--muted)] hover:text-[var(--ink)]">
+                          Edit
+                        </Link>
+                      )}
+                      {isBriefClosed(b) ? (
+                        <span className="text-xs font-medium" style={{ color: "var(--danger-fg)" }}>Closed</span>
+                      ) : (
+                        <Link href={`/discover?brief=${b.id}`} className="text-xs font-medium text-[var(--brand-teal-dark)]">
+                          Find creators →
+                        </Link>
+                      )}
+                    </div>
                   </Td>
                 </tr>
               ))}

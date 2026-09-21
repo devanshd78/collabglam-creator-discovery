@@ -2,7 +2,7 @@
 
 import { useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { Check, ExternalLink, Loader2, Mail, Pencil, X } from "lucide-react";
+import { Check, Download, ExternalLink, Loader2, Mail, Pencil, X } from "lucide-react";
 import { compact, dateTime } from "@/lib/format";
 
 export interface ListCreatorRow {
@@ -31,10 +31,12 @@ export default function ListCreatorsTable({
   listId,
   rows,
   showTeamContext = false,
+  allowSelectiveExport = false,
 }: {
   listId?: string;
   rows: ListCreatorRow[];
   showTeamContext?: boolean;
+  allowSelectiveExport?: boolean;
 }) {
   const router = useRouter();
   const [filter, setFilter] = useState("");
@@ -43,6 +45,9 @@ export default function ListCreatorsTable({
   // Emails typed in this session, shown immediately while the page refreshes in the background.
   const [edited, setEdited] = useState<Map<string, { email: string | null; source: string | null }>>(new Map());
   const [editing, setEditing] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [downloading, setDownloading] = useState(false);
+  const [downloadError, setDownloadError] = useState<string | null>(null);
 
   const merged = useMemo(
     () => rows.map((r) => (edited.has(r.id) ? { ...r, email: edited.get(r.id)!.email, emailSource: edited.get(r.id)!.source } : r)),
@@ -61,6 +66,61 @@ export default function ListCreatorsTable({
     );
   }, [merged, filter, emailFilter]);
   const missing = merged.filter((r) => !r.email).length;
+  const allShownSelected = shown.length > 0 && shown.every((row) => selected.has(row.id));
+
+  function toggleSelected(id: string) {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  }
+
+  function toggleAllShown() {
+    setSelected((prev) => {
+      const next = new Set(prev);
+      if (allShownSelected) shown.forEach((row) => next.delete(row.id));
+      else shown.forEach((row) => next.add(row.id));
+      return next;
+    });
+  }
+
+  async function downloadSelected() {
+    if (!allowSelectiveExport || selected.size === 0) return;
+    const endpoint = showTeamContext ? "/api/admin/export" : listId ? `/api/lists/${listId}/export` : null;
+    if (!endpoint) return;
+
+    setDownloading(true);
+    setDownloadError(null);
+    try {
+      const res = await fetch(endpoint, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ creatorIds: [...selected] }),
+      });
+      if (!res.ok) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error ?? "Could not export selected creators");
+      }
+
+      const blob = await res.blob();
+      const disposition = res.headers.get("Content-Disposition") ?? "";
+      const filename = disposition.match(/filename="?([^";]+)"?/i)?.[1] ?? "selected-creators.csv";
+      const url = URL.createObjectURL(blob);
+      const anchor = document.createElement("a");
+      anchor.href = url;
+      anchor.download = filename;
+      document.body.appendChild(anchor);
+      anchor.click();
+      anchor.remove();
+      URL.revokeObjectURL(url);
+    } catch (err) {
+      setDownloadError(err instanceof Error ? err.message : "Could not export selected creators");
+    } finally {
+      setDownloading(false);
+    }
+  }
 
   function onEmailSaved(row: ListCreatorRow, email: string | null) {
     setEdited((prev) => new Map(prev).set(row.id, { email, source: email ? "YouTube About page (revealed by hand)" : null }));
@@ -78,7 +138,14 @@ export default function ListCreatorsTable({
     setRemoving(row.id);
     const res = await fetch(`/api/lists/${targetListId}/creators/${row.id}`, { method: "DELETE" });
     setRemoving(null);
-    if (res.ok) router.refresh();
+    if (res.ok) {
+      setSelected((prev) => {
+        const next = new Set(prev);
+        next.delete(row.id);
+        return next;
+      });
+      router.refresh();
+    }
   }
 
   return (
@@ -91,7 +158,32 @@ export default function ListCreatorsTable({
           <option value="missing">Needs email ({missing})</option>
         </select>
         <span className="text-[12px] text-[var(--muted-2)]">{shown.length} shown</span>
+        {allowSelectiveExport && (
+          <>
+            <span className="h-5 w-px bg-[var(--border)]" aria-hidden="true" />
+            <span className="text-[12px] text-[var(--muted)]">{selected.size} selected</span>
+            <button
+              type="button"
+              onClick={() => void downloadSelected()}
+              disabled={downloading || selected.size === 0}
+              className="btn-primary inline-flex items-center gap-1 px-3 py-1.5 text-xs"
+            >
+              {downloading ? <Loader2 size={13} className="animate-spin" /> : <Download size={13} />}
+              Download selected CSV
+            </button>
+            {selected.size > 0 && (
+              <button type="button" onClick={() => setSelected(new Set())} className="text-xs font-medium text-[var(--muted)] hover:text-[var(--ink)]">
+                Clear selection
+              </button>
+            )}
+          </>
+        )}
       </div>
+      {downloadError && (
+        <p className="text-[12px]" style={{ color: "var(--danger-fg)" }}>
+          {downloadError}
+        </p>
+      )}
       {missing > 0 && (
         <p className="text-[12px] rounded-lg px-3 py-2" style={{ background: "var(--info-bg)", color: "var(--info-fg)" }}>
           {missing} {missing === 1 ? "creator still needs" : "creators still need"} an email. Click <b>Get email</b>: the channel&apos;s About page opens in a new
@@ -107,6 +199,16 @@ export default function ListCreatorsTable({
         <table className="w-full text-[12.5px] min-w-[900px]">
           <thead>
             <tr className="text-left text-[10.5px] uppercase tracking-wide text-[var(--muted-2)] border-b border-[var(--border)]">
+              {allowSelectiveExport && (
+                <th className="px-3 py-2.5 w-10">
+                  <input
+                    type="checkbox"
+                    aria-label="Select all shown creators"
+                    checked={allShownSelected}
+                    onChange={toggleAllShown}
+                  />
+                </th>
+              )}
               <th className="px-3 py-2.5">Creator</th>
               <th className="px-3 py-2.5">Email</th>
               <th className="px-3 py-2.5">Subscribers</th>
@@ -122,6 +224,16 @@ export default function ListCreatorsTable({
           <tbody>
             {shown.map((r) => (
               <tr key={r.id} className="border-b border-[var(--border)] last:border-0 align-top">
+                {allowSelectiveExport && (
+                  <td className="px-3 py-2.5">
+                    <input
+                      type="checkbox"
+                      aria-label={`Select ${r.title} for CSV export`}
+                      checked={selected.has(r.id)}
+                      onChange={() => toggleSelected(r.id)}
+                    />
+                  </td>
+                )}
                 <td className="px-3 py-2.5">
                   <div className="flex items-center gap-2 min-w-0">
                     <div className="w-8 h-8 rounded-full overflow-hidden shrink-0 bg-[var(--bg)]">
