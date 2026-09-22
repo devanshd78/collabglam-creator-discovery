@@ -6,6 +6,7 @@ import { dateTime } from "@/lib/format";
 import { PageHeader, StatCard } from "../../../components/ui";
 import ListActions from "./ListActions";
 import ListCreatorsTable, { type ListCreatorRow } from "./ListCreatorsTable";
+import ManualCreatorButton from "./ManualCreatorButton";
 
 export default async function ListPage({ params }: { params: Promise<{ id: string }> }) {
   const user = await requirePageUser();
@@ -47,19 +48,25 @@ export default async function ListPage({ params }: { params: Promise<{ id: strin
         ]
           .filter(Boolean)
           .join(" · ")}
-        actions={<ListActions id={list.id} name={list.name} total={creators.length} withEmail={withEmail} />}
+        actions={
+          <>
+            <ManualCreatorButton listId={list.id} campaignName={list.brief?.brandName} />
+            <ListActions id={list.id} name={list.name} total={creators.length} withEmail={withEmail} />
+          </>
+        }
       />
-      <div className="grid grid-cols-2 lg:grid-cols-4 gap-3">
+      <div className="grid grid-cols-2 lg:grid-cols-5 gap-3">
         <StatCard label="Creators" value={creators.length} />
         <StatCard label="With email" value={withEmail} hint={creators.length ? `${Math.round((withEmail / creators.length) * 100)}%` : undefined} />
         <StatCard label="From campaign match" value={creators.filter((c) => c.source === "campaign").length} />
         <StatCard label="From filter search" value={creators.filter((c) => c.source === "search").length} />
+        <StatCard label="Added manually" value={creators.filter((c) => c.source === "manual").length} />
       </div>
       {creators.length === 0 ? (
         <div className="card p-10 text-center text-sm text-[var(--muted-2)]">
-          This list is empty.{" "}
+          This list is empty. You can add a known creator manually above, or {" "}
           <Link href={list.brief ? `/discover?brief=${list.brief.id}` : "/discover"} className="text-[var(--brand-teal-dark)] font-medium">
-            Find creators
+            find creators with Discover
           </Link>
         </div>
       ) : (

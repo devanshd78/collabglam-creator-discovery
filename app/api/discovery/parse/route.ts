@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
-import { heuristicParseBrief, normalizeProfile } from "@/lib/discovery/campaignProfile";
+import { heuristicParseBrief } from "@/lib/discovery/campaignProfile";
+import { profileFromBrandBrief } from "@/lib/discovery/briefProfile";
 import { DEPTH_SETTINGS, estimateCampaignUnits, type DiscoveryDepth } from "@/lib/discovery/campaignDiscovery";
 import { requireApiUser } from "@/lib/auth";
 import { prisma } from "@/lib/prisma";
@@ -29,32 +30,7 @@ export async function POST(req: NextRequest) {
     if (closed) return NextResponse.json({ error: closed }, { status: 409 });
   }
 
-  const nicheTerms = source?.targetNiche
-    ? source.targetNiche
-        .split(/[,;\n|]/)
-        .map((value) => value.trim().toLowerCase())
-        .filter(Boolean)
-        .slice(0, 10)
-    : [];
-  const parserText = source?.targetNiche ? `Target niche: ${source.targetNiche}. Campaign requirements: ${brief}` : brief;
-  const parsed = heuristicParseBrief(parserText);
-
-  if (source) {
-    parsed.profile = normalizeProfile({
-      ...parsed.profile,
-      category: nicheTerms[0] ?? parsed.profile.category,
-      targetProducts: [...nicheTerms, ...parsed.profile.targetProducts],
-      market: source.market ?? parsed.profile.market,
-      minSubscribers: source.minSubscribers ?? parsed.profile.minSubscribers,
-      maxSubscribers: source.maxSubscribers ?? parsed.profile.maxSubscribers,
-      creatorCount: source.targetCreators ?? parsed.profile.creatorCount,
-    });
-    parsed.notes = parsed.notes.filter((n) => {
-      if (source.market && n.startsWith("No market")) return false;
-      if ((source.minSubscribers || source.maxSubscribers) && n.startsWith("No subscriber range")) return false;
-      return true;
-    });
-  }
+  const parsed = source ? profileFromBrandBrief(source) : heuristicParseBrief(brief);
 
   const depths = (Object.keys(DEPTH_SETTINGS) as DiscoveryDepth[]).map((key) => ({
     key,

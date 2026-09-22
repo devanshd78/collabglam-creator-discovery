@@ -276,7 +276,7 @@ export default function ListCreatorsTable({
                 )}
                 <td className="px-3 py-2.5 text-[var(--muted-2)] whitespace-nowrap">
                   {dateTime(r.claimedAt)}
-                  <div className="text-[10.5px]">{r.source === "campaign" ? "Campaign match" : "Filter search"}</div>
+                  <div className="text-[10.5px]">{r.source === "campaign" ? "Campaign match" : r.source === "manual" ? "Manual add" : "Filter search"}</div>
                 </td>
                 <td className="px-3 py-2.5">
                   <button
